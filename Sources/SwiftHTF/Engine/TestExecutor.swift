@@ -48,18 +48,19 @@ public actor TestExecutor {
     ///
     /// 调用方应在 Task 中迭代 stream。订阅可以在 `execute()` 之前或之后建立；
     /// 订阅终止（终止 task / break out of for-await）会自动从执行器移除。
-    public nonisolated func events() -> AsyncStream<TestEvent> {
-        AsyncStream { continuation in
-            let id = UUID()
-            Task { await self.attach(id, continuation) }
-            continuation.onTermination = { _ in
-                Task { await self.detach(id) }
-            }
+    ///
+    /// 由 actor 隔离 — 返回前 attach 已完成，调用方紧接着的 `execute()` 不会丢事件。
+    public func events() -> AsyncStream<TestEvent> {
+        let id = UUID()
+        var continuation: AsyncStream<TestEvent>.Continuation!
+        let stream = AsyncStream<TestEvent> { c in
+            continuation = c
         }
-    }
-
-    private func attach(_ id: UUID, _ continuation: AsyncStream<TestEvent>.Continuation) {
         continuations[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.detach(id) }
+        }
+        return stream
     }
 
     private func detach(_ id: UUID) {

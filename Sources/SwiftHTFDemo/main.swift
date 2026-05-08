@@ -83,7 +83,7 @@ func run() async {
     await executor.register(MockPowerSupply.self)
 
     let listener = Task { [executor] in
-        for await event in executor.events() {
+        for await event in await executor.events() {
             switch event {
             case .testStarted(let name, let sn):
                 print("[event] testStarted plan=\(name) sn=\(sn ?? "-")")

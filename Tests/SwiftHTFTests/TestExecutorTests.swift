@@ -140,7 +140,7 @@ final class TestExecutorTests: XCTestCase {
         }
         let collector = Collector()
 
-        let stream = executor.events()
+        let stream = await executor.events()
         let listener = Task {
             for await event in stream {
                 switch event {
