@@ -29,13 +29,15 @@ public final class TestRunnerViewModel: ObservableObject {
     public let logCapacity: Int
     private let executor: TestExecutor
     private var runner: Task<Void, Never>?
+    private var currentSession: TestSession?
 
     public init(executor: TestExecutor, logCapacity: Int = 500) {
         self.executor = executor
         self.logCapacity = logCapacity
     }
 
-    /// 启动测试。当前正在跑则忽略。订阅会在 execute 之前完成，不丢事件。
+    /// 启动测试。当前正在跑则忽略。订阅 session.events() 而非 executor 聚合流，
+    /// 避免多 session 模式下事件混流。
     public func start(serialNumber: String? = nil) {
         guard !isRunning else { return }
         reset()
@@ -43,8 +45,9 @@ public final class TestRunnerViewModel: ObservableObject {
         let exec = executor
 
         runner = Task { @MainActor [weak self] in
-            // 先订阅，再 execute —— 同一个 task 里串行 await 保证顺序
-            let stream = await exec.events()
+            let session = await exec.startSession(serialNumber: serialNumber)
+            self?.currentSession = session
+            let stream = await session.events()
 
             let listener = Task { @MainActor [weak self] in
                 for await event in stream {
@@ -61,23 +64,23 @@ public final class TestRunnerViewModel: ObservableObject {
                         self.outcome = r.outcome
                         self.record = r
                         self.serialNumber = r.serialNumber
-                        return // 主动退出，避免后续残留事件再写状态
+                        return
                     }
                 }
             }
 
-            _ = await exec.execute(serialNumber: serialNumber)
-            // 等 listener 自然结束（testCompleted 触发 return）
+            _ = await session.record()
             _ = await listener.value
             self?.isRunning = false
             self?.runner = nil
+            self?.currentSession = nil
         }
     }
 
-    /// 取消正在执行的测试。
+    /// 取消正在执行的测试（仅取消本 ViewModel 持有的 session）。
     public func cancel() {
-        let exec = executor
-        Task { await exec.cancel() }
+        guard let session = currentSession else { return }
+        Task { await session.cancel() }
     }
 
     /// 清空状态（保留 logCapacity / executor 引用）。

@@ -8,25 +8,24 @@ public enum TestEvent: Sendable {
     case testCompleted(TestRecord)
 }
 
-/// 测试执行器
+/// 测试执行器：plan / config / plug 注册的容器，能派生多个并发 `TestSession`。
 ///
-/// actor 模型保证内部状态串行访问。事件通过 `events()` 返回的 `AsyncStream` 推送，
-/// 取代原 onLog/onPhaseComplete 闭包参数。
+/// 单 DUT 用法（最常见）：直接 `executor.execute(serialNumber:)` 跑一轮。
+/// 多 DUT 并发：`executor.startSession(serialNumber:)` 拿到独立 session，可同时跑多个。
+///
+/// 每个 session 持有自己的 plug 实例（factory 重新构造、独立 setup/tearDown），互不干扰。
+/// `events()` 是聚合流：所有 session 的事件汇到这里，方便单 session 简单消费；要区分
+/// 多 session 时改订阅 `session.events()`。
 public actor TestExecutor {
     private let plan: TestPlan
-    private let plugManager: PlugManager
     private let outputCallbacks: [OutputCallback]
     private let config: TestConfig
 
-    public private(set) var isRunning: Bool = false
-    private var currentTask: Task<TestRecord, Never>?
+    /// 把"register T 类型"打包成可灌入新 PlugManager 的闭包，保留泛型类型信息。
+    private var registrationFns: [@Sendable (PlugManager) async -> Void] = []
+    private var activeSessions: [UUID: TestSession] = [:]
     private var continuations: [UUID: AsyncStream<TestEvent>.Continuation] = [:]
 
-    /// 初始化
-    /// - Parameters:
-    ///   - plan: 测试计划
-    ///   - config: 测试配置（phase 内通过 ctx.config 访问）
-    ///   - outputCallbacks: 输出回调
     public init(
         plan: TestPlan,
         config: TestConfig = TestConfig(),
@@ -34,13 +33,16 @@ public actor TestExecutor {
     ) {
         self.plan = plan
         self.config = config
-        self.plugManager = PlugManager()
         self.outputCallbacks = outputCallbacks
     }
 
+    // MARK: - Plug 注册
+
     /// 注册 Plug 类型（无参 init）
     public func register<T: PlugProtocol>(_ type: T.Type) async {
-        await plugManager.register(type)
+        registrationFns.append { mgr in
+            await mgr.register(type)
+        }
     }
 
     /// 注册 Plug 类型（工厂闭包，用于需要构造器参数的场景）
@@ -48,21 +50,69 @@ public actor TestExecutor {
         _ type: T.Type,
         factory: @escaping @MainActor @Sendable () -> T
     ) async {
-        await plugManager.register(type, factory: factory)
+        registrationFns.append { mgr in
+            await mgr.register(type, factory: factory)
+        }
     }
 
-    /// 订阅事件流
+    // MARK: - Session 派生
+
+    /// 创建一个新的测试会话；调用方拿到 session 后可订阅 events / 调 cancel / 等 record。
+    /// 每个 session 持有独立 plug 实例。
+    public func startSession(serialNumber: String? = nil) async -> TestSession {
+        let mgr = PlugManager()
+        for fn in registrationFns {
+            await fn(mgr)
+        }
+        let session = TestSession(
+            plan: plan,
+            config: config,
+            plugManager: mgr,
+            outputCallbacks: outputCallbacks,
+            serialNumber: serialNumber
+        )
+        activeSessions[session.id] = session
+
+        // 桥接 session 事件到 executor 的聚合流（先订阅再 start，不丢事件）
+        let stream = await session.events()
+        Task { [weak self] in
+            for await event in stream {
+                await self?.broadcast(event)
+            }
+            await self?.removeSession(session.id)
+        }
+        await session.start()
+        return session
+    }
+
+    /// 便利：单 session 同步执行（向后兼容旧 API）
+    public func execute(serialNumber: String? = nil) async -> TestRecord {
+        let session = await startSession(serialNumber: serialNumber)
+        return await session.record()
+    }
+
+    /// 取消所有正在跑的 session（多 session 模式可单独 `session.cancel()`）
+    public func cancel() async {
+        for s in activeSessions.values {
+            await s.cancel()
+        }
+    }
+
+    private func removeSession(_ id: UUID) {
+        activeSessions.removeValue(forKey: id)
+    }
+
+    // MARK: - 聚合事件流
+
+    /// 订阅"所有 session"的聚合事件流。多 session 模式下事件会混合 —— 需区分时改订阅
+    /// `session.events()`。
     ///
-    /// 调用方应在 Task 中迭代 stream。订阅可以在 `execute()` 之前或之后建立；
-    /// 订阅终止（终止 task / break out of for-await）会自动从执行器移除。
-    ///
-    /// 由 actor 隔离 — 返回前 attach 已完成，调用方紧接着的 `execute()` 不会丢事件。
+    /// 由 actor 隔离 —— 返回前 attach 已完成，调用方紧接着的 `execute()`/`startSession()`
+    /// 不会丢事件。
     public func events() -> AsyncStream<TestEvent> {
         let id = UUID()
         var continuation: AsyncStream<TestEvent>.Continuation!
-        let stream = AsyncStream<TestEvent> { c in
-            continuation = c
-        }
+        let stream = AsyncStream<TestEvent> { c in continuation = c }
         continuations[id] = continuation
         continuation.onTermination = { [weak self] _ in
             Task { await self?.detach(id) }
@@ -74,258 +124,8 @@ public actor TestExecutor {
         continuations.removeValue(forKey: id)
     }
 
-    private func emit(_ event: TestEvent) {
+    private func broadcast(_ event: TestEvent) {
         for c in continuations.values { c.yield(event) }
-    }
-
-    /// 执行测试
-    public func execute(serialNumber: String? = nil) async -> TestRecord {
-        guard !isRunning else {
-            var record = TestRecord(planName: plan.name, serialNumber: serialNumber)
-            record.outcome = .error
-            record.endTime = Date()
-            return record
-        }
-
-        let task = Task<TestRecord, Never> {
-            await self.runInternal(serialNumber: serialNumber)
-        }
-        currentTask = task
-        isRunning = true
-
-        let record = await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
-
-        isRunning = false
-        currentTask = nil
-        return record
-    }
-
-    /// 取消测试 — 通过 Task.cancel() 让结构化并发传播到内部 await 点
-    public func cancel() {
-        currentTask?.cancel()
-    }
-
-    private func runInternal(serialNumber: String?) async -> TestRecord {
-        var record = TestRecord(planName: plan.name, serialNumber: serialNumber)
-        emit(.testStarted(planName: plan.name, serialNumber: serialNumber))
-
-        let resolvedPlugs: [String: any PlugProtocol]
-        do {
-            resolvedPlugs = try await plugManager.setupAll()
-        } catch {
-            emit(.log("Plug setup failed: \(error.localizedDescription)"))
-            record.outcome = .error
-            record.endTime = Date()
-            await notifyOutputs(record)
-            emit(.testCompleted(record))
-            return record
-        }
-
-        let cfg = config
-        let context = await MainActor.run {
-            TestContext(serialNumber: serialNumber, resolvedPlugs: resolvedPlugs, config: cfg)
-        }
-
-        // 顶层 setup（旧 API 兼容）
-        var earlyExit = false
-        if !plan.setupNodes.isEmpty {
-            let outcome = await runNodes(
-                plan.setupNodes,
-                groupPath: [],
-                continueOnFail: false,
-                into: &record,
-                context: context
-            )
-            if outcome.failed {
-                record.outcome = .fail
-                earlyExit = true
-            }
-            if outcome.aborted { record.outcome = .aborted; earlyExit = true }
-        }
-
-        if !earlyExit {
-            let outcome = await runNodes(
-                plan.nodes,
-                groupPath: [],
-                continueOnFail: plan.continueOnFail,
-                into: &record,
-                context: context
-            )
-            if outcome.failed { record.outcome = .fail }
-            if outcome.aborted { record.outcome = .aborted }
-        }
-
-        // teardown 必跑
-        if !plan.teardownNodes.isEmpty {
-            _ = await runNodes(
-                plan.teardownNodes,
-                groupPath: [],
-                continueOnFail: true,
-                into: &record,
-                context: context
-            )
-        }
-
-        // 全部 phase 通过但有 marginal → 整体升级为 .marginalPass
-        if record.outcome == .pass
-            && record.phases.contains(where: { $0.outcome == .marginalPass })
-        {
-            record.outcome = .marginalPass
-        }
-
-        if Task.isCancelled && record.outcome != .fail {
-            record.outcome = .aborted
-        }
-
-        await plugManager.tearDownAll()
-        await syncContextBack(into: &record, context: context)
-        record.endTime = Date()
-        await notifyOutputs(record)
-        emit(.testCompleted(record))
-        return record
-    }
-
-    /// 把 phase 期间在 ctx 上发生的可变状态（如 ctx.serialNumber = 扫码值）回灌到 record。
-    private func syncContextBack(into record: inout TestRecord, context: TestContext) async {
-        let sn = await MainActor.run { context.serialNumber }
-        record.serialNumber = sn
-    }
-
-    private struct GroupOutcome {
-        var failed: Bool = false
-        var aborted: Bool = false
-    }
-
-    /// 顺序执行节点序列；遇 group 递归。
-    private func runNodes(
-        _ nodes: [PhaseNode],
-        groupPath: [String],
-        continueOnFail: Bool,
-        into record: inout TestRecord,
-        context: TestContext
-    ) async -> GroupOutcome {
-        var outcome = GroupOutcome()
-        for node in nodes {
-            if Task.isCancelled { outcome.aborted = true; return outcome }
-            switch node {
-            case .phase(let phase):
-                // runIf 检查
-                if let runIf = phase.runIf {
-                    let proceed = await runIf(context)
-                    if !proceed {
-                        let skipRecord = makeSkipRecord(
-                            name: phase.definition.name,
-                            groupPath: groupPath,
-                            reason: "runIf=false"
-                        )
-                        record.phases.append(skipRecord)
-                        emit(.phaseCompleted(skipRecord))
-                        continue
-                    }
-                }
-                var phaseRecord = await runPhase(phase, context: context)
-                phaseRecord.groupPath = groupPath
-                record.phases.append(phaseRecord)
-                emit(.phaseCompleted(phaseRecord))
-                if phaseRecord.outcome == .fail || phaseRecord.outcome == .error {
-                    outcome.failed = true
-                    if !continueOnFail { return outcome }
-                }
-            case .group(let g):
-                let nested = await runGroup(g, parentPath: groupPath, into: &record, context: context)
-                if nested.failed {
-                    outcome.failed = true
-                    if !continueOnFail { return outcome }
-                }
-                if nested.aborted {
-                    outcome.aborted = true
-                    return outcome
-                }
-            }
-        }
-        return outcome
-    }
-
-    /// 执行单个 Group：先 runIf 门控，然后 setup → children（按 group.continueOnFail）→ teardown（必跑）
-    private func runGroup(
-        _ g: Group,
-        parentPath: [String],
-        into record: inout TestRecord,
-        context: TestContext
-    ) async -> GroupOutcome {
-        // group runIf：false 时合成一条 skip 记录，跳整段
-        if let runIf = g.runIf {
-            let proceed = await runIf(context)
-            if !proceed {
-                let skipRecord = makeSkipRecord(name: g.name, groupPath: parentPath, reason: "runIf=false")
-                record.phases.append(skipRecord)
-                emit(.phaseCompleted(skipRecord))
-                return GroupOutcome(failed: false, aborted: false)
-            }
-        }
-
-        let path = parentPath + [g.name]
-        var groupOutcome = GroupOutcome()
-
-        let setupOut = await runNodes(
-            g.setup, groupPath: path, continueOnFail: false,
-            into: &record, context: context
-        )
-        if setupOut.aborted { return GroupOutcome(failed: false, aborted: true) }
-        if setupOut.failed {
-            groupOutcome.failed = true
-            // 跳过 children，仍跑 teardown
-            _ = await runNodes(
-                g.teardown, groupPath: path, continueOnFail: true,
-                into: &record, context: context
-            )
-            return groupOutcome
-        }
-
-        let childOut = await runNodes(
-            g.children, groupPath: path, continueOnFail: g.continueOnFail,
-            into: &record, context: context
-        )
-        if childOut.failed { groupOutcome.failed = true }
-        if childOut.aborted { groupOutcome.aborted = true }
-
-        _ = await runNodes(
-            g.teardown, groupPath: path, continueOnFail: true,
-            into: &record, context: context
-        )
-
-        return groupOutcome
-    }
-
-    /// 构造一条合成的 skip 记录（runIf 跳过场景）
-    private func makeSkipRecord(name: String, groupPath: [String], reason: String) -> PhaseRecord {
-        var r = PhaseRecord(name: name)
-        r.groupPath = groupPath
-        r.outcome = .skip
-        r.errorMessage = reason
-        r.endTime = r.startTime
-        return r
-    }
-
-    private nonisolated func runPhase(_ phase: Phase, context: TestContext) async -> PhaseRecord {
-        let logEmitter: PhaseExecutor.LogEmitter = { [weak self] msg in
-            guard let self else { return }
-            Task { await self.emit(.log(msg)) }
-        }
-        let executor = await MainActor.run {
-            PhaseExecutor(context: context, emitLog: logEmitter)
-        }
-        return await executor.execute(phase: phase)
-    }
-
-    private func notifyOutputs(_ record: TestRecord) async {
-        for callback in outputCallbacks {
-            await callback.save(record: record)
-        }
     }
 }
 
