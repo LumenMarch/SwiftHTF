@@ -8,7 +8,9 @@ let package = Package(
     ],
     products: [
         .library(name: "SwiftHTF", targets: ["SwiftHTF"]),
-        .executable(name: "SwiftHTFDemo", targets: ["SwiftHTFDemo"])
+        .library(name: "SwiftHTFUI", targets: ["SwiftHTFUI"]),
+        .executable(name: "SwiftHTFDemo", targets: ["SwiftHTFDemo"]),
+        .executable(name: "SwiftHTFSwiftUIDemo", targets: ["SwiftHTFSwiftUIDemo"])
     ],
     targets: [
         .target(
@@ -17,13 +19,28 @@ let package = Package(
                 .enableExperimentalFeature("StrictConcurrency")
             ]
         ),
+        .target(
+            name: "SwiftHTFUI",
+            dependencies: ["SwiftHTF"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
         .executableTarget(
             name: "SwiftHTFDemo",
             dependencies: ["SwiftHTF"]
         ),
+        .executableTarget(
+            name: "SwiftHTFSwiftUIDemo",
+            dependencies: ["SwiftHTF", "SwiftHTFUI"]
+        ),
         .testTarget(
             name: "SwiftHTFTests",
             dependencies: ["SwiftHTF"]
+        ),
+        .testTarget(
+            name: "SwiftHTFUITests",
+            dependencies: ["SwiftHTFUI"]
         )
     ]
 )
