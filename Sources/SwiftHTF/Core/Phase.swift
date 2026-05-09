@@ -47,17 +47,10 @@ public struct Phase: Identifiable, Sendable {
     /// 当 phase 闭包返回 `.continue` 但有 measurement 验证失败时，最多再尝试几次。
     /// 与 `retryCount`（处理异常 / 显式 `.retry`）独立计数，互不消耗。
     public let repeatOnMeasurementFail: Int
+    /// 失败时跑的诊断器（仅 phase 终态 outcome=.fail/.error 时触发）
+    public let diagnosers: [any PhaseDiagnoser]
 
     /// 初始化
-    /// - Parameters:
-    ///   - definition: 阶段定义
-    ///   - validators: 验证器列表
-    ///   - lowerLimit: 下限
-    ///   - upperLimit: 上限
-    ///   - unit: 单位
-    ///   - measurements: 声明式 measurement 规约
-    ///   - runIf: 运行时条件门
-    ///   - repeatOnMeasurementFail: measurement 失败时最多重跑次数（与 retryCount 独立）
     public init(
         definition: PhaseDefinition,
         validators: [Validator] = [],
@@ -66,7 +59,8 @@ public struct Phase: Identifiable, Sendable {
         unit: String? = nil,
         measurements: [MeasurementSpec] = [],
         runIf: RunIfPredicate? = nil,
-        repeatOnMeasurementFail: Int = 0
+        repeatOnMeasurementFail: Int = 0,
+        diagnosers: [any PhaseDiagnoser] = []
     ) {
         self.definition = definition
         self.validators = validators
@@ -76,6 +70,7 @@ public struct Phase: Identifiable, Sendable {
         self.measurements = measurements
         self.runIf = runIf
         self.repeatOnMeasurementFail = repeatOnMeasurementFail
+        self.diagnosers = diagnosers
     }
 
     /// 便捷初始化
@@ -89,6 +84,7 @@ public struct Phase: Identifiable, Sendable {
         measurements: [MeasurementSpec] = [],
         runIf: RunIfPredicate? = nil,
         repeatOnMeasurementFail: Int = 0,
+        diagnosers: [any PhaseDiagnoser] = [],
         execute: @escaping @Sendable @MainActor (TestContext) async throws -> PhaseResult
     ) {
         self.definition = PhaseDefinition(
@@ -104,5 +100,6 @@ public struct Phase: Identifiable, Sendable {
         self.measurements = measurements
         self.runIf = runIf
         self.repeatOnMeasurementFail = repeatOnMeasurementFail
+        self.diagnosers = diagnosers
     }
 }

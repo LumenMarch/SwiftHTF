@@ -55,6 +55,9 @@ public struct ConsoleOutput: OutputCallback {
             for a in phase.attachments {
                 lines.append("      📎 \(a.name) (\(a.mimeType), \(formatBytes(a.size)))")
             }
+            for d in phase.diagnoses {
+                lines.append("      🩺 [\(d.severity.rawValue)] \(d.code): \(d.message)")
+            }
         }
         lines.append("===================")
         print(lines.joined(separator: "\n"))
@@ -118,7 +121,7 @@ public struct CSVOutput: OutputCallback {
                 at: directory,
                 withIntermediateDirectories: true
             )
-            var lines: [String] = ["name,outcome,value,duration_s,attachments_count,error"]
+            var lines: [String] = ["name,outcome,value,duration_s,attachments_count,diagnoses_count,error"]
             for p in record.phases {
                 lines.append([
                     Self.escape(p.name),
@@ -126,6 +129,7 @@ public struct CSVOutput: OutputCallback {
                     Self.escape(p.value ?? ""),
                     String(format: "%.3f", p.duration),
                     String(p.attachments.count),
+                    String(p.diagnoses.count),
                     Self.escape(p.errorMessage ?? "")
                 ].joined(separator: ","))
             }

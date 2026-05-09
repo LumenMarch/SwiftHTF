@@ -146,6 +146,9 @@ private struct PhaseRow: View {
             ForEach(Array(phase.attachments.enumerated()), id: \.offset) { (_, a) in
                 AttachmentRow(attachment: a)
             }
+            ForEach(phase.diagnoses) { d in
+                DiagnosisRow(diagnosis: d)
+            }
         }
         .padding(8)
         .padding(.leading, CGFloat(phase.groupPath.count) * 12)
@@ -169,6 +172,30 @@ private struct PhaseRow: View {
         case .marginalPass: return .yellow
         case .fail, .error: return .red
         case .skip: return .gray
+        }
+    }
+}
+
+private struct DiagnosisRow: View {
+    let diagnosis: Diagnosis
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("🩺").font(.caption)
+            Text("[\(diagnosis.severity.rawValue)]").font(.caption2.bold()).foregroundColor(severityColor)
+            Text(diagnosis.code).font(.caption.bold())
+            Text(diagnosis.message).font(.caption).foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.leading, 16)
+    }
+
+    private var severityColor: Color {
+        switch diagnosis.severity {
+        case .info: return .blue
+        case .warning: return .orange
+        case .error: return .red
+        case .critical: return .purple
         }
     }
 }

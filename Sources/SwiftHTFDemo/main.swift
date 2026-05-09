@@ -84,6 +84,19 @@ func makePlan(config: TestConfig) -> TestPlan {
                             config.double("vcc.marginalUpper") ?? 3.4
                         )
                         .withinPercent(of: vccTarget, percent: vccPercent)
+                ],
+                diagnosers: [
+                    ClosureDiagnoser("vcc-overshoot") { @MainActor record, ctx in
+                        guard let v = record.measurements["vcc"]?.value.asDouble else { return [] }
+                        let dump = "[diag] vcc=\(v) target=\(vccTarget) lower=\(vccLower) upper=\(vccUpper)"
+                        ctx.attach("vcc-trace.log", data: Data(dump.utf8), mimeType: "text/plain")
+                        return [Diagnosis(
+                            code: v > vccUpper ? "VCC_OVERSHOOT" : "VCC_UNDERSHOOT",
+                            severity: .error,
+                            message: "vcc \(v) 超出 [\(vccLower), \(vccUpper)]",
+                            details: ["vcc": .double(v), "target": .double(vccTarget)]
+                        )]
+                    }
                 ]
             ) { @MainActor ctx in
                 let psu = ctx.getPlug(MockPowerSupply.self)

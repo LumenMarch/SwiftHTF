@@ -34,8 +34,35 @@ public final class PhaseExecutor {
                 log("[\(phase.definition.name)] ---> Repeat (measurement fail \(measurementRepeatsUsed)/\(maxMeasurementRepeats))")
                 continue
             }
+            // 终态：outcome 已定。fail/error 时跑 diagnosers。
+            if (record.outcome == .fail || record.outcome == .error)
+                && !phase.diagnosers.isEmpty
+            {
+                return await runDiagnosers(record: record, phase: phase)
+            }
             return record
         }
+    }
+
+    /// 跑 phase.diagnosers 并合并副作用（measurement / attachment）进 record。
+    /// diagnoser 写的 measurement 不再跑 spec validation —— 视为辅助调试信息。
+    private func runDiagnosers(record: PhaseRecord, phase: Phase) async -> PhaseRecord {
+        var r = record
+        for diagnoser in phase.diagnosers {
+            let diagnoses = await diagnoser.diagnose(record: r, context: context)
+            r.diagnoses.append(contentsOf: diagnoses)
+            // diagnoser 副作用：合并新写入的 ctx.measurements / ctx.attachments
+            for (name, m) in context.measurements {
+                r.measurements[name] = m
+            }
+            r.attachments.append(contentsOf: context.attachments)
+            context.measurements = [:]
+            context.attachments = []
+            for d in diagnoses {
+                log("[\(phase.definition.name)] ---> Diagnosis (\(d.severity.rawValue)) \(d.code): \(d.message)")
+            }
+        }
+        return r
     }
 
     private func executeAttempt(phase: Phase) async -> PhaseRecord {
