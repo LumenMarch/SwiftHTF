@@ -55,6 +55,40 @@ public actor TestExecutor {
         }
     }
 
+    /// 把抽象类型别名到已注册的具体类型。phase 代码用 `ctx.getPlug(Abstract.self)`
+    /// 时实际拿到 `Concrete` 实例。
+    /// `Concrete` 必须已经通过 `register` 登记。
+    public func bind<A: PlugProtocol, C: PlugProtocol>(
+        _ abstract: A.Type,
+        to concrete: C.Type
+    ) async {
+        registrationFns.append { mgr in
+            await mgr.bind(abstract, to: concrete)
+        }
+    }
+
+    /// 用 `B` 替换 `A` 的注册（mock 注入）。会移除 A 的 factory，注册 B，
+    /// 并把 `A` 别名到 `B`，使 `ctx.getPlug(A.self)` 得到 B 实例。
+    public func swap<A: PlugProtocol, B: PlugProtocol>(
+        _ a: A.Type,
+        with b: B.Type
+    ) async {
+        registrationFns.append { mgr in
+            await mgr.swap(a, with: b)
+        }
+    }
+
+    /// 工厂闭包版 swap
+    public func swap<A: PlugProtocol, B: PlugProtocol>(
+        _ a: A.Type,
+        with b: B.Type,
+        factory: @escaping @MainActor @Sendable () -> B
+    ) async {
+        registrationFns.append { mgr in
+            await mgr.swap(a, with: b, factory: factory)
+        }
+    }
+
     // MARK: - Session 派生
 
     /// 创建一个新的测试会话；调用方拿到 session 后可订阅 events / 调 cancel / 等 record。
