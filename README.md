@@ -14,20 +14,25 @@ A modern Swift hardware-test framework inspired by [OpenHTF](https://github.com/
 - **Declarative test plans** — compose `Phase`s with a `@resultBuilder` DSL, including `if` / `for` / availability branches.
 - **Nested PhaseGroup** — `Group(name) { ... } setup: { ... } teardown: { ... }` sits alongside `Phase` and nests freely; `continueOnFail` is local to each group.
 - **Declarative measurements** — pre-declare `MeasurementSpec` on a phase, chain validators (`inRange` / `equals` / `matchesRegex` / `withinPercent` / `notEmpty` / `marginalRange` / `custom`); outcomes are written back to `Measurement.outcome`.
+- **Multi-dimensional measurements (`SeriesMeasurement`)** — `ctx.recordSeries("iv") { rec in ... }` incrementally captures IV / sweep / temperature curves; `SeriesMeasurementSpec` supports `lengthAtLeast` / `each` / `custom` validators.
 - **Three-state outcome** — `pass` / `marginalPass` / `fail` / `error` / `skip`, with proper "in-spec but near limit" semantics.
 - **Runtime gating with `runIf`** — both `Phase` and `Group` accept a `runIf` closure that reads `ctx.config` / collected state to decide whether to execute.
 - **Measurement repeat** — `repeatOnMeasurementFail` is independent of `retryCount` (which handles thrown exceptions / explicit `.retry`); the two counters never consume each other.
-- **Diagnostics** — `PhaseDiagnoser` runs at terminal `.fail` / `.error`, can read the record and write `ctx.attach` / `ctx.measure` for debugging breadcrumbs; `Diagnosis` carries severity / fault code / arbitrary details.
+- **Diagnostics** — `PhaseDiagnoser` runs at terminal `.fail` / `.error`, can read the record and write `ctx.attach` / `ctx.measure` / `ctx.log` for debugging breadcrumbs; `Diagnosis` carries severity / fault code / arbitrary details.
 - **Failure routing** — `failureExceptions` whitelist: thrown matching types map to `.fail` (test failure), others stay `.error` (program error).
 - **Attachments** — `ctx.attach(name:data:mimeType:)` / `attachFromFile(_:)`; auto base64 in JSON, summary in Console / CSV.
+- **Per-phase logger** — `ctx.logInfo / logWarning / logError(...)` writes to `PhaseRecord.logs: [LogEntry]` and broadcasts to the event stream in real time; on retry only the last attempt's logs survive.
 - **`TestConfig`** — JSON loader, `ctx.config.string(...) / double(...) / value(_, as:)` inside phases. Zero external dependencies.
 - **Pluggable hardware (`Plug`)** — register with `init()` or a factory; declare `dependencies` and `PlugManager` topologically sorts setup, injecting ready plugs via `setup(resolver:)`.
+- **Plug placeholders (`bind` / `swap`)** — `executor.swap(RealPSU.self, with: MockPSU.self)` swaps a real plug with a mock; phase code keeps `ctx.getPlug(RealPSU.self)` unchanged.
 - **Operator interaction (`PromptPlug`)** — `await prompt.requestConfirm(...) / requestText(...) / requestChoice(...)` suspends inside a phase; UI subscribes via `events()` and replies with `resolve(...)`. Designed for SwiftUI sheets.
 - **Multi-DUT concurrency (`TestSession`)** — one `TestExecutor` spawns multiple concurrent sessions; each owns its own plug instances and event stream. `executor.events()` is the aggregated stream.
+- **History persistence (`HistoryStore`)** — `InMemoryHistoryStore` / `JSONFileHistoryStore`; query by SN / planName / outcome / time window / limit. `HistoryOutputCallback` plugs in as an `OutputCallback` for automatic ingest.
+- **Continuous trigger loop (`TestLoop`)** — factory pattern: `trigger` returns a serial number to start one session, then waits again on completion; `states()` exposes a state stream for SwiftUI.
 - **Strict concurrency** — Swift `actor` + `StrictConcurrency`, phase code is `@MainActor`, plug isolation is your call.
 - **Event stream** — `AsyncStream<TestEvent>`: `testStarted` / `phaseCompleted` / `log` / `testCompleted`.
-- **Output sinks** — `ConsoleOutput` / `JSONOutput` / `CSVOutput` built in; implement `OutputCallback` for anything else.
-- **Codable records** — `TestRecord` / `PhaseRecord` / `Measurement` / `Attachment` / `Diagnosis` round-trip JSON.
+- **Output sinks** — `ConsoleOutput` / `JSONOutput` / `CSVOutput` / `HistoryOutputCallback` built in; implement `OutputCallback` for anything else.
+- **Codable records** — `TestRecord` / `PhaseRecord` / `Measurement` / `SeriesMeasurement` / `Attachment` / `Diagnosis` / `LogEntry` round-trip JSON.
 - **`SwiftHTFUI`** — ready-made `TestRunnerViewModel` / `PromptCoordinator` / `PromptSheetView` for SwiftUI.
 
 ## Requirements
@@ -41,7 +46,7 @@ Add SwiftHTF to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/HunterFirefly/SwiftHTF.git", branch: "main")
+    .package(url: "https://github.com/HunterFirefly/SwiftHTF.git", from: "0.1.0")
 ],
 targets: [
     .target(
@@ -81,9 +86,10 @@ func makePlan(config: TestConfig) -> TestPlan {
             return await prompt.requestConfirm("Fixture in place?") ? .continue : .stop
         }
 
-        // Nested Group + declarative measurement + diagnoser
+        // Nested Group + declarative measurement + diagnoser + per-phase log
         Group("PowerRail") {
             Phase(name: "PowerOn") { @MainActor ctx in
+                ctx.logInfo("Powering on at 3.3V")
                 await ctx.getPlug(PowerSupply.self).setOutput(3.3)
                 return .continue
             }
@@ -197,6 +203,41 @@ Aggregation precedence: fail > marginal > pass.
 
 Undeclared measurements may still be written (treated as auxiliary; no aggregation effect).
 
+### Multi-dimensional measurements (`SeriesMeasurement`)
+
+Declare the trace's dimensions then incrementally append samples in the phase; `harvest` runs all series validators:
+
+```swift
+Phase(
+    name: "VRampSweep",
+    series: [
+        .named("v_ramp")
+            .dimension("V_set", unit: "V")
+            .value("V_meas", unit: "V")
+            .lengthAtLeast(5)
+            .each { sample in                         // closure runs per row
+                guard let want = sample[0].asDouble,
+                      let got = sample[1].asDouble else { return .pass }
+                let err = abs(got - want)
+                if err > 0.2 { return .fail("err=\(err)V") }
+                if err > 0.1 { return .marginal("err=\(err)V") }
+                return .pass
+            }
+    ]
+) { @MainActor ctx in
+    let psu = ctx.getPlug(PowerSupply.self)
+    await ctx.recordSeries("v_ramp") { rec in
+        for v in stride(from: 0.0, through: 3.3, by: 0.5) {
+            await psu.setOutput(v)
+            rec.append(v, await psu.readVoltage())
+        }
+    }
+    return .continue
+}
+```
+
+`SeriesMeasurement` lives alongside single-point `Measurement` in `PhaseRecord.traces: [String: SeriesMeasurement]`; series outcomes feed the same phase aggregation, and `repeatOnMeasurementFail` triggers on series failure too.
+
 ### Phase advanced fields
 
 ```swift
@@ -205,10 +246,11 @@ Phase(
     timeout: 5,                          // seconds
     retryCount: 2,                       // retries on exception / explicit .retry
     measurements: [.named("vcc").inRange(3.0, 3.6)],
+    series: [.named("v_ramp").dimension("V").value("I").lengthAtLeast(5)],
     runIf: { @MainActor ctx in           // runtime gate — false → outcome=.skip
         ctx.config.bool("vcc.enabled") ?? true
     },
-    repeatOnMeasurementFail: 3,          // re-read on measurement failure
+    repeatOnMeasurementFail: 3,          // re-read on measurement / series failure
     diagnosers: [                        // run at terminal .fail / .error
         ClosureDiagnoser("trace") { record, ctx in [...] }
     ],
@@ -229,6 +271,27 @@ Phase(name: "Diag") { @MainActor ctx in
 ```
 
 `PhaseRecord.attachments: [Attachment]` is persisted; JSON output uses `Data`'s default base64; Console shows `📎 name (mime, size)`; CSV gains an `attachments_count` column.
+
+### Per-phase logger
+
+Inside a phase write logs via `ctx.logXxx`; entries are appended to `PhaseRecord.logs` in order and broadcast to the session event stream live:
+
+```swift
+Phase(name: "BringUp") { @MainActor ctx in
+    ctx.logInfo("Booting BSP")
+    do {
+        try await bsp.boot()
+    } catch {
+        ctx.logError("boot failed: \(error.localizedDescription)")
+        throw error
+    }
+    return .continue
+}
+```
+
+- `LogEntry { timestamp, level, message }`, `LogLevel` is `debug/info/warning/error`
+- Each retry attempt resets the buffer; only the last attempt's logs survive in `record.logs`
+- Logs written from a `PhaseDiagnoser` are merged into `record.logs` as well
 
 ### Configuration (`TestConfig`)
 
@@ -260,6 +323,37 @@ final class MidPlug: PlugProtocol {
 ```
 
 `PlugManager.setupAll` topologically sorts plugs so dependencies set up before dependents. Cycles or missing dependencies throw `PlugManagerError`, which `TestExecutor` surfaces as `record.outcome=.error`.
+
+### Plug placeholders (mock injection)
+
+Real plugs in production, mocks in CI — phase code stays the same:
+
+```swift
+class RealPSU: PlugProtocol {
+    required init() {}
+    func setOutput(_ v: Double) {}
+    func readVoltage() -> Double { /* real readout */ 3.3 }
+    func setup() async throws {}
+    func tearDown() async {}
+}
+final class MockPSU: RealPSU {
+    override func readVoltage() -> Double { 1.5 }   // simulated
+}
+
+let executor = TestExecutor(plan: plan)
+await executor.register(RealPSU.self)
+await executor.swap(RealPSU.self, with: MockPSU.self)   // swap for tests
+
+// Phase code unchanged:
+ctx.getPlug(RealPSU.self).readVoltage()   // actually returns the MockPSU instance
+```
+
+API:
+- `bind(Abstract.self, to: Concrete.self)` — alias an abstract type to an already-registered concrete one
+- `swap(A.self, with: B.self)` — `unregister(A) + register(B) + bind(A, to: B)` in one call
+- `swap(_, with:, factory:)` — supply a factory closure for the mock instance
+
+Aliases also participate in dependency topological sort: a plug that declares `dependencies = [Abstract.self]` resolves to the concrete instance after the alias is in place.
 
 ### PromptPlug & SwiftUI integration
 
@@ -319,7 +413,7 @@ struct ContentView: View {
 let executor = TestExecutor(plan: plan, config: cfg)
 await executor.register(PowerSupply.self)
 
-// Single DUT (backwards compatible):
+// Single DUT:
 let record = await executor.execute(serialNumber: "SN-1")
 
 // Multi-DUT in parallel:
@@ -333,6 +427,46 @@ let (rec1, rec2) = await (r1, r2)
 ```
 
 Each session owns its own plug instances (factories are reinvoked, independent setup / tearDown). `executor.events()` is the aggregated stream; subscribe to `session.events()` to discriminate per-DUT.
+
+### History persistence (`HistoryStore`)
+
+Persist records to disk and query past results across processes:
+
+```swift
+let store = try JSONFileHistoryStore(directory: URL(fileURLWithPath: "/var/log/htf"))
+let executor = TestExecutor(
+    plan: plan,
+    outputCallbacks: [HistoryOutputCallback(store: store)]   // auto-ingest each record
+)
+
+// later:
+let recent = try await store.list(HistoryQuery(serialNumber: "SN-1", limit: 10))
+let fails = try await store.list(HistoryQuery(outcomes: [.fail], since: Date().addingTimeInterval(-86400)))
+```
+
+API:
+- `save(_:)` / `load(id:)` / `list(_:)` / `delete(id:)` / `clear()`
+- `HistoryQuery`: `serialNumber` / `planName` / `outcomes` / `since` / `until` / `limit` / `sortDescending`
+- Built-in implementations: `InMemoryHistoryStore` (actor, for tests) and `JSONFileHistoryStore` (actor, one JSON file per record, `secondsSince1970` encoding to preserve millisecond precision)
+
+### Continuous trigger loop (`TestLoop`)
+
+Factory continuous-test pattern: scan barcode → start a session → wait for completion → back to scan:
+
+```swift
+let loop = TestLoop(
+    executor: executor,
+    trigger: { await viewModel.waitForBarcode() },   // returns SN, nil to stop
+    onCompleted: { record in
+        try? await store.save(record)
+    }
+)
+await loop.start()
+// ...
+await loop.stop()
+```
+
+`states()` exposes the state stream (`idle` / `awaitingTrigger` / `running(sn)` / `stopped`) with replay buffer to drive SwiftUI; `completedCount` reflects sessions completed.
 
 ### Event stream
 
@@ -355,12 +489,13 @@ Implement `OutputCallback.save(record:)` for arbitrary destinations. Built-ins:
 
 - `ConsoleOutput` — pretty-printed summary (with measurements, attachments, diagnoses)
 - `JSONOutput(directory:)` — one ISO8601-named JSON file per record
-- `CSVOutput(directory:)` — one CSV per record, one row per phase (with `attachments_count` / `diagnoses_count` columns)
+- `CSVOutput(directory:)` — one CSV per record, one row per phase (columns: name, outcome, duration_s, measurements_count, traces_count, attachments_count, diagnoses_count, error)
+- `HistoryOutputCallback(store:)` — wraps any `HistoryStore` for automatic ingest
 
 ## Demos
 
 ```bash
-# CLI demo (auto-answers prompts, outputs to $TMPDIR/SwiftHTFDemo/)
+# Programmatic demo (auto-answers prompts, outputs to $TMPDIR/SwiftHTFDemo/)
 swift run SwiftHTFDemo
 
 # SwiftUI window (operator answers prompts, phase grid + live log)
@@ -371,7 +506,7 @@ swift run SwiftHTFSwiftUIDemo
 
 ```bash
 swift build
-swift test          # 160 tests
+swift test          # 185 tests
 ```
 
 ## License

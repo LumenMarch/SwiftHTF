@@ -14,20 +14,25 @@
 - **声明式测试计划** —— 用 `@resultBuilder` DSL 组合 `Phase`，原生支持 `if` / `for` / `#available` 分支。
 - **嵌套 PhaseGroup** —— `Group(name) { ... } setup: { ... } teardown: { ... }` 与 Phase 同级，可任意层级嵌套；group 内 `continueOnFail` 局部生效。
 - **声明式 Measurement** —— 在 phase 上预声明 `MeasurementSpec`，链式追加 validator (`inRange` / `equals` / `matchesRegex` / `withinPercent` / `notEmpty` / `marginalRange` / `custom`)，运行后写回 `Measurement.outcome`。
+- **多维 Measurement (`SeriesMeasurement`)** —— `ctx.recordSeries("iv") { rec in ... }` 增量收集 IV / 扫频 / 扫温曲线；`SeriesMeasurementSpec` 支持 `lengthAtLeast` / `each` / `custom` 等校验。
 - **三态 outcome** —— `pass` / `marginalPass` / `fail` / `error` / `skip`，支持靠近边界但仍合格的"放行但需关注"语义。
 - **运行时条件门 `runIf`** —— Phase 与 Group 都可挂 `runIf` 闭包，访问当前 `ctx.config` / 已收集的状态决定是否执行。
 - **测量重跑** —— `repeatOnMeasurementFail`（measurement 失败重跑）与 `retryCount`（异常 / 显式 retry）独立计数，互不消耗。
-- **故障诊断** —— `PhaseDiagnoser` 在 phase fail/.error 终态触发，可读 record + 写 `ctx.attach` / `ctx.measure` 留下调试线索；`Diagnosis` 带 severity / 故障码 / 任意 details。
+- **故障诊断** —— `PhaseDiagnoser` 在 phase fail/.error 终态触发，可读 record + 写 `ctx.attach` / `ctx.measure` / `ctx.log` 留下调试线索；`Diagnosis` 带 severity / 故障码 / 任意 details。
 - **异常分流** —— `failureExceptions` 白名单：抛指定类型→`.fail`（业务失败），其他→`.error`（程序错误）。
 - **附件 `attach`** —— phase 内 `ctx.attach(name:data:mimeType:)` / `attachFromFile(_:)`，自动 base64 进 JSON、Console / CSV 摘要。
+- **Phase 局部日志** —— `ctx.logInfo / logWarning / logError(...)` 写入 `PhaseRecord.logs: [LogEntry]` 同时实时广播到事件流；retry 时仅保留最后一次 attempt 的日志。
 - **配置 `TestConfig`** —— JSON 加载，phase 内 `ctx.config.string(...) / double(...) / value(_, as:)` 读取，零外部依赖。
 - **可插拔硬件 (`Plug`)** —— 支持 `init()` 或工厂闭包注册；声明 `dependencies` 后 `PlugManager` 自动拓扑排序，`setup(resolver:)` 注入已就绪的依赖。
+- **Plug 替身 (`bind` / `swap`)** —— `executor.swap(RealPSU.self, with: MockPSU.self)` 把真实 plug 整组替换为 mock；phase 代码 `ctx.getPlug(RealPSU.self)` 不变。
 - **操作员交互 (`PromptPlug`)** —— phase 内 `await prompt.requestConfirm(...) / requestText(...) / requestChoice(...)` 挂起；UI 端用 `events()` 订阅 + `resolve(...)` 应答；面向 SwiftUI sheet 集成。
 - **多 DUT 并发 (`TestSession`)** —— 一个 `TestExecutor` 可派生多个 session 同时运行，各自独立 plug 实例 + 独立事件流；`executor.events()` 是聚合流。
+- **历史持久化 (`HistoryStore`)** —— `InMemoryHistoryStore` / `JSONFileHistoryStore`，按 SN / planName / outcome / 时间窗口 / limit 查询；`HistoryOutputCallback` 可作为 `OutputCallback` 自动入库。
+- **连续触发循环 (`TestLoop`)** —— 工厂模式：`trigger` 闭包返回 SN 启动一次 session，结束后回到 trigger 等下一轮；`states()` 状态流方便 SwiftUI 驱动 UI。
 - **严格并发** —— Swift `actor` + `StrictConcurrency`，phase 代码 `@MainActor`，Plug 隔离方式由你决定。
 - **事件流** —— `AsyncStream<TestEvent>`：`testStarted` / `phaseCompleted` / `log` / `testCompleted`。
-- **输出回调** —— 内置 `ConsoleOutput` / `JSONOutput` / `CSVOutput`，可实现 `OutputCallback` 自定义。
-- **Codable 记录** —— `TestRecord` / `PhaseRecord` / `Measurement` / `Attachment` / `Diagnosis` 完整 JSON 往返。
+- **输出回调** —— 内置 `ConsoleOutput` / `JSONOutput` / `CSVOutput` / `HistoryOutputCallback`，可实现 `OutputCallback` 自定义。
+- **Codable 记录** —— `TestRecord` / `PhaseRecord` / `Measurement` / `SeriesMeasurement` / `Attachment` / `Diagnosis` / `LogEntry` 完整 JSON 往返。
 - **`SwiftHTFUI` 库** —— 现成的 `TestRunnerViewModel` / `PromptCoordinator` / `PromptSheetView`，直接接入 SwiftUI。
 
 ## 系统要求
@@ -41,7 +46,7 @@
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/HunterFirefly/SwiftHTF.git", branch: "main")
+    .package(url: "https://github.com/HunterFirefly/SwiftHTF.git", from: "0.1.0")
 ],
 targets: [
     .target(
@@ -81,9 +86,10 @@ func makePlan(config: TestConfig) -> TestPlan {
             return await prompt.requestConfirm("放好治具？") ? .continue : .stop
         }
 
-        // 嵌套 Group + 声明式 measurement + diagnoser
+        // 嵌套 Group + 声明式 measurement + diagnoser + per-phase log
         Group("PowerRail") {
             Phase(name: "PowerOn") { @MainActor ctx in
+                ctx.logInfo("开机至 3.3V")
                 await ctx.getPlug(PowerSupply.self).setOutput(3.3)
                 return .continue
             }
@@ -197,6 +203,41 @@ Phase(
 
 未声明的 measurement 仍允许写入（视为辅助信息，不参与聚合）。
 
+### 多维 Measurement（SeriesMeasurement）
+
+声明 trace 维度后，phase 内 `ctx.recordSeries` 用闭包增量收集 IV / 扫频 / 扫温曲线，harvest 跑全量 validator：
+
+```swift
+Phase(
+    name: "VRampSweep",
+    series: [
+        .named("v_ramp")
+            .dimension("V_set", unit: "V")
+            .value("V_meas", unit: "V")
+            .lengthAtLeast(5)
+            .each { sample in                         // 每个采样跑闭包
+                guard let want = sample[0].asDouble,
+                      let got = sample[1].asDouble else { return .pass }
+                let err = abs(got - want)
+                if err > 0.2 { return .fail("err=\(err)V") }
+                if err > 0.1 { return .marginal("err=\(err)V") }
+                return .pass
+            }
+    ]
+) { @MainActor ctx in
+    let psu = ctx.getPlug(PowerSupply.self)
+    await ctx.recordSeries("v_ramp") { rec in
+        for v in stride(from: 0.0, through: 3.3, by: 0.5) {
+            await psu.setOutput(v)
+            rec.append(v, await psu.readVoltage())
+        }
+    }
+    return .continue
+}
+```
+
+`SeriesMeasurement` 与单点 `Measurement` 平行存放在 `PhaseRecord.traces: [String: SeriesMeasurement]`；同样参与 phase outcome 聚合，`repeatOnMeasurementFail` 也对 series fail 生效。
+
 ### Phase 高级字段
 
 ```swift
@@ -205,10 +246,11 @@ Phase(
     timeout: 5,                          // 超时（秒）
     retryCount: 2,                       // 异常 / 显式 .retry 的重试次数
     measurements: [.named("vcc").inRange(3.0, 3.6)],
+    series: [.named("v_ramp").dimension("V").value("I").lengthAtLeast(5)],
     runIf: { @MainActor ctx in           // 运行时条件门 — false 时 outcome=.skip
         ctx.config.bool("vcc.enabled") ?? true
     },
-    repeatOnMeasurementFail: 3,          // measurement 失败时再读 N 次
+    repeatOnMeasurementFail: 3,          // measurement / series 失败时再读 N 次
     diagnosers: [                        // fail / .error 终态时跑
         ClosureDiagnoser("trace") { record, ctx in [...] }
     ],
@@ -229,6 +271,27 @@ Phase(name: "Diag") { @MainActor ctx in
 ```
 
 `PhaseRecord.attachments: [Attachment]` 持久化；JSON 输出时 `Data` 默认 base64；Console 显示 `📎 name (mime, size)`；CSV 加 `attachments_count` 列。
+
+### Phase 局部日志
+
+phase 闭包内通过 `ctx.logXxx` 写日志，按写入顺序进入 `PhaseRecord.logs`，并实时广播到 session 事件流：
+
+```swift
+Phase(name: "BringUp") { @MainActor ctx in
+    ctx.logInfo("启动 BSP")
+    do {
+        try await bsp.boot()
+    } catch {
+        ctx.logError("boot failed: \(error.localizedDescription)")
+        throw error
+    }
+    return .continue
+}
+```
+
+- `LogEntry { timestamp, level, message }`，`LogLevel` 为 `debug/info/warning/error`
+- retry 时每次 attempt 起始重置，`record.logs` 仅含最后一次 attempt
+- diagnoser 内 `ctx.log` 也合并进 `record.logs`
 
 ### 配置（TestConfig）
 
@@ -260,6 +323,37 @@ final class MidPlug: PlugProtocol {
 ```
 
 `PlugManager.setupAll` 拓扑排序构造 plug，依赖先于被依赖者 setup；循环依赖 / 缺失依赖会抛 `PlugManagerError`，TestExecutor 把它转为 `record.outcome=.error`。
+
+### Plug 替身（mock 注入）
+
+部署用真实 plug，CI 用 mock —— phase 代码不变：
+
+```swift
+class RealPSU: PlugProtocol {
+    required init() {}
+    func setOutput(_ v: Double) {}
+    func readVoltage() -> Double { /* 真实读数 */ 3.3 }
+    func setup() async throws {}
+    func tearDown() async {}
+}
+final class MockPSU: RealPSU {
+    override func readVoltage() -> Double { 1.5 }   // 仿真
+}
+
+let executor = TestExecutor(plan: plan)
+await executor.register(RealPSU.self)
+await executor.swap(RealPSU.self, with: MockPSU.self)   // 测试时整组替换
+
+// phase 代码不动：
+ctx.getPlug(RealPSU.self).readVoltage()   // 实际拿到 MockPSU 实例
+```
+
+API：
+- `bind(Abstract.self, to: Concrete.self)` —— 抽象别名到已注册的具体类型
+- `swap(A.self, with: B.self)` —— `unregister(A) + register(B) + bind(A, to: B)` 一站式
+- `swap(_, with:, factory:)` —— 自定义 mock 实例的工厂闭包
+
+依赖链上 alias 也参与拓扑排序：plug 声明 `dependencies = [Abstract.self]`，alias 后 resolver 拿到具体实现。
 
 ### PromptPlug & SwiftUI 集成
 
@@ -311,7 +405,7 @@ struct ContentView: View {
 
 `TestRunnerViewModel` 暴露 `phases` / `logLines` / `outcome` / `isRunning` / `record` / `serialNumber` 等 `@Published` 属性，订阅 `session.events()`，多 session 模式不会混流。
 
-### TestConfig 与多 DUT 并发
+### 多 DUT 并发
 
 `TestExecutor` 是一个 plan / config / plug 注册的容器；可派生多个并发 `TestSession`：
 
@@ -319,7 +413,7 @@ struct ContentView: View {
 let executor = TestExecutor(plan: plan, config: cfg)
 await executor.register(PowerSupply.self)
 
-// 单 DUT（向后兼容）：
+// 单 DUT：
 let record = await executor.execute(serialNumber: "SN-1")
 
 // 多 DUT 并发：
@@ -333,6 +427,46 @@ let (rec1, rec2) = await (r1, r2)
 ```
 
 每个 session 持有独立的 plug 实例（factory 重新构造，独立 setup/tearDown）。`executor.events()` 是聚合流；要区分多 session 改订阅 `session.events()`。
+
+### 历史持久化（HistoryStore）
+
+把 record 落到磁盘，跨进程查询既往结果：
+
+```swift
+let store = try JSONFileHistoryStore(directory: URL(fileURLWithPath: "/var/log/htf"))
+let executor = TestExecutor(
+    plan: plan,
+    outputCallbacks: [HistoryOutputCallback(store: store)]   // 每次完成自动入库
+)
+
+// 之后查询：
+let recent = try await store.list(HistoryQuery(serialNumber: "SN-1", limit: 10))
+let fails = try await store.list(HistoryQuery(outcomes: [.fail], since: Date().addingTimeInterval(-86400)))
+```
+
+API：
+- `save(_:)` / `load(id:)` / `list(_:)` / `delete(id:)` / `clear()`
+- `HistoryQuery`：`serialNumber` / `planName` / `outcomes` / `since` / `until` / `limit` / `sortDescending`
+- 内置实现：`InMemoryHistoryStore`（actor，测试用） / `JSONFileHistoryStore`（actor，每条 record 一个 JSON 文件，secondsSince1970 编码保留毫秒精度）
+
+### 连续触发循环（TestLoop）
+
+工厂连续测试模式：扫码 → 启动 session → 等结束 → 回到扫码：
+
+```swift
+let loop = TestLoop(
+    executor: executor,
+    trigger: { await viewModel.waitForBarcode() },   // 返回 SN，nil 表示停止
+    onCompleted: { record in
+        try? await store.save(record)
+    }
+)
+await loop.start()
+// ...
+await loop.stop()
+```
+
+`states()` 状态流（`idle` / `awaitingTrigger` / `running(sn)` / `stopped`）补发历史，方便 SwiftUI 驱动 UI；`completedCount` 反映已完成的 session 数。
 
 ### 事件流
 
@@ -355,12 +489,13 @@ for await event in await executor.events() {
 
 - `ConsoleOutput` —— 控制台摘要（含 measurement / 附件 / 故障码）
 - `JSONOutput(directory:)` —— 每条记录一个 ISO8601 命名的 JSON 文件
-- `CSVOutput(directory:)` —— 每条记录一个 CSV，每行一个 phase（含 `attachments_count` / `diagnoses_count` 列）
+- `CSVOutput(directory:)` —— 每条记录一个 CSV，每行一个 phase（列：name, outcome, duration_s, measurements_count, traces_count, attachments_count, diagnoses_count, error）
+- `HistoryOutputCallback(store:)` —— 包装任意 `HistoryStore`，每次记录完成自动入库
 
 ## Demo
 
 ```bash
-# CLI 演示（自动应答 prompt，输出落 $TMPDIR/SwiftHTFDemo/）
+# 程序化运行的演示（自动应答 prompt，输出落 $TMPDIR/SwiftHTFDemo/）
 swift run SwiftHTFDemo
 
 # SwiftUI 主窗口（手动应答 prompt，phase 表格 + live log）
@@ -371,7 +506,7 @@ swift run SwiftHTFSwiftUIDemo
 
 ```bash
 swift build
-swift test          # 160 用例
+swift test          # 185 用例
 ```
 
 ## 许可证
