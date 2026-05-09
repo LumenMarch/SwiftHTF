@@ -127,6 +127,10 @@ private struct PhaseRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(symbol).foregroundColor(color)
+                if !phase.groupPath.isEmpty {
+                    Text(phase.groupPath.joined(separator: " / ") + " /")
+                        .foregroundColor(.secondary).font(.caption)
+                }
                 Text(phase.name).font(.body.bold())
                 Spacer()
                 Text(String(format: "%.2fs", phase.duration))
@@ -143,6 +147,7 @@ private struct PhaseRow: View {
             }
         }
         .padding(8)
+        .padding(.leading, CGFloat(phase.groupPath.count) * 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.06))
         .cornerRadius(6)

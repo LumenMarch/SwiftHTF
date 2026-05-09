@@ -32,7 +32,8 @@ public struct ConsoleOutput: OutputCallback {
         for phase in record.phases {
             let mark = phase.outcome == .pass ? "✓" : "✗"
             let value = phase.value ?? "N/A"
-            lines.append("  \(mark) \(phase.name): \(value) (\(String(format: "%.2f", phase.duration))s)")
+            let prefix = phase.groupPath.isEmpty ? "" : "[" + phase.groupPath.joined(separator: " / ") + "] "
+            lines.append("  \(mark) \(prefix)\(phase.name): \(value) (\(String(format: "%.2f", phase.duration))s)")
             for (name, m) in phase.measurements.sorted(by: { $0.key < $1.key }) {
                 let mmark = m.outcome == .pass ? "✓" : "✗"
                 let unit = m.unit.map { " \($0)" } ?? ""

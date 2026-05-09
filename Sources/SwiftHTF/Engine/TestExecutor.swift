@@ -130,43 +130,50 @@ public actor TestExecutor {
             TestContext(serialNumber: serialNumber, resolvedPlugs: resolvedPlugs, config: cfg)
         }
 
-        // setup phases
-        if let setupPhases = plan.setup {
-            for phase in setupPhases {
-                if Task.isCancelled { break }
-                let phaseRecord = await runPhase(phase, context: context)
-                record.phases.append(phaseRecord)
-                emit(.phaseCompleted(phaseRecord))
-                if phaseRecord.outcome == .fail || phaseRecord.outcome == .error {
-                    record.outcome = .fail
-                    await runTeardown(record: &record, context: context)
-                    await plugManager.tearDownAll()
-                    await syncContextBack(into: &record, context: context)
-                    record.endTime = Date()
-                    await notifyOutputs(record)
-                    emit(.testCompleted(record))
-                    return record
-                }
-            }
-        }
-
-        // 主 phases
-        for phase in plan.phases {
-            if Task.isCancelled { break }
-            let phaseRecord = await runPhase(phase, context: context)
-            record.phases.append(phaseRecord)
-            emit(.phaseCompleted(phaseRecord))
-            if phaseRecord.outcome == .fail || phaseRecord.outcome == .error {
+        // 顶层 setup（旧 API 兼容）
+        var earlyExit = false
+        if !plan.setupNodes.isEmpty {
+            let outcome = await runNodes(
+                plan.setupNodes,
+                groupPath: [],
+                continueOnFail: false,
+                into: &record,
+                context: context
+            )
+            if outcome.failed {
                 record.outcome = .fail
-                if !plan.continueOnFail { break }
+                earlyExit = true
             }
+            if outcome.aborted { record.outcome = .aborted; earlyExit = true }
         }
 
-        if Task.isCancelled {
+        if !earlyExit {
+            let outcome = await runNodes(
+                plan.nodes,
+                groupPath: [],
+                continueOnFail: plan.continueOnFail,
+                into: &record,
+                context: context
+            )
+            if outcome.failed { record.outcome = .fail }
+            if outcome.aborted { record.outcome = .aborted }
+        }
+
+        // teardown 必跑
+        if !plan.teardownNodes.isEmpty {
+            _ = await runNodes(
+                plan.teardownNodes,
+                groupPath: [],
+                continueOnFail: true,
+                into: &record,
+                context: context
+            )
+        }
+
+        if Task.isCancelled && record.outcome != .fail {
             record.outcome = .aborted
         }
 
-        await runTeardown(record: &record, context: context)
         await plugManager.tearDownAll()
         await syncContextBack(into: &record, context: context)
         record.endTime = Date()
@@ -181,13 +188,85 @@ public actor TestExecutor {
         record.serialNumber = sn
     }
 
-    private func runTeardown(record: inout TestRecord, context: TestContext) async {
-        guard let teardownPhases = plan.teardown else { return }
-        for phase in teardownPhases {
-            let phaseRecord = await runPhase(phase, context: context)
-            record.phases.append(phaseRecord)
-            emit(.phaseCompleted(phaseRecord))
+    private struct GroupOutcome {
+        var failed: Bool = false
+        var aborted: Bool = false
+    }
+
+    /// 顺序执行节点序列；遇 group 递归。
+    private func runNodes(
+        _ nodes: [PhaseNode],
+        groupPath: [String],
+        continueOnFail: Bool,
+        into record: inout TestRecord,
+        context: TestContext
+    ) async -> GroupOutcome {
+        var outcome = GroupOutcome()
+        for node in nodes {
+            if Task.isCancelled { outcome.aborted = true; return outcome }
+            switch node {
+            case .phase(let phase):
+                var phaseRecord = await runPhase(phase, context: context)
+                phaseRecord.groupPath = groupPath
+                record.phases.append(phaseRecord)
+                emit(.phaseCompleted(phaseRecord))
+                if phaseRecord.outcome == .fail || phaseRecord.outcome == .error {
+                    outcome.failed = true
+                    if !continueOnFail { return outcome }
+                }
+            case .group(let g):
+                let nested = await runGroup(g, parentPath: groupPath, into: &record, context: context)
+                if nested.failed {
+                    outcome.failed = true
+                    if !continueOnFail { return outcome }
+                }
+                if nested.aborted {
+                    outcome.aborted = true
+                    return outcome
+                }
+            }
         }
+        return outcome
+    }
+
+    /// 执行单个 Group：setup → children（按 group.continueOnFail）→ teardown（必跑）
+    private func runGroup(
+        _ g: Group,
+        parentPath: [String],
+        into record: inout TestRecord,
+        context: TestContext
+    ) async -> GroupOutcome {
+        let path = parentPath + [g.name]
+        var groupOutcome = GroupOutcome()
+
+        let setupOut = await runNodes(
+            g.setup, groupPath: path, continueOnFail: false,
+            into: &record, context: context
+        )
+        if setupOut.aborted { return GroupOutcome(failed: false, aborted: true) }
+        if setupOut.failed {
+            groupOutcome.failed = true
+            // 跳过 children，仍跑 teardown
+            _ = await runNodes(
+                g.teardown, groupPath: path, continueOnFail: true,
+                into: &record, context: context
+            )
+            return groupOutcome
+        }
+
+        let childOut = await runNodes(
+            g.children, groupPath: path, continueOnFail: g.continueOnFail,
+            into: &record, context: context
+        )
+        if childOut.failed { groupOutcome.failed = true }
+        if childOut.aborted { groupOutcome.aborted = true }
+
+        _ = await runNodes(
+            g.teardown, groupPath: path, continueOnFail: true,
+            into: &record, context: context
+        )
+
+        return groupOutcome
     }
 
     private nonisolated func runPhase(_ phase: Phase, context: TestContext) async -> PhaseRecord {
@@ -211,11 +290,39 @@ public actor TestExecutor {
 /// 测试计划
 public struct TestPlan: Sendable {
     public let name: String
-    public let phases: [Phase]
-    public let setup: [Phase]?
-    public let teardown: [Phase]?
+    public let nodes: [PhaseNode]
+    public let setupNodes: [PhaseNode]
+    public let teardownNodes: [PhaseNode]
     public let continueOnFail: Bool
 
+    /// 旧 API 投影：仅返回顶层 `.phase` 节点。含嵌套 Group 时对其内部不可见。
+    public var phases: [Phase] { nodes.compactMap { $0.asPhase } }
+    /// 旧 API 投影：仅返回顶层 setup 中的 `.phase` 节点；空时返回 nil（与旧语义一致）。
+    public var setup: [Phase]? {
+        let phases = setupNodes.compactMap { $0.asPhase }
+        return phases.isEmpty ? nil : phases
+    }
+    public var teardown: [Phase]? {
+        let phases = teardownNodes.compactMap { $0.asPhase }
+        return phases.isEmpty ? nil : phases
+    }
+
+    /// 主初始化：直接用 PhaseNode 构造（含嵌套 Group）
+    public init(
+        name: String,
+        nodes: [PhaseNode],
+        setupNodes: [PhaseNode] = [],
+        teardownNodes: [PhaseNode] = [],
+        continueOnFail: Bool = false
+    ) {
+        self.name = name
+        self.nodes = nodes
+        self.setupNodes = setupNodes
+        self.teardownNodes = teardownNodes
+        self.continueOnFail = continueOnFail
+    }
+
+    /// 旧 init 兼容（接受 `[Phase]`，自动包装为 `.phase` 节点）
     public init(
         name: String,
         phases: [Phase],
@@ -223,11 +330,13 @@ public struct TestPlan: Sendable {
         teardown: [Phase]? = nil,
         continueOnFail: Bool = false
     ) {
-        self.name = name
-        self.phases = phases
-        self.setup = setup
-        self.teardown = teardown
-        self.continueOnFail = continueOnFail
+        self.init(
+            name: name,
+            nodes: phases.map { .phase($0) },
+            setupNodes: (setup ?? []).map { .phase($0) },
+            teardownNodes: (teardown ?? []).map { .phase($0) },
+            continueOnFail: continueOnFail
+        )
     }
 }
 

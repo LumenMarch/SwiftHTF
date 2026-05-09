@@ -19,6 +19,8 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
     public var measurements: [String: Measurement]
     public var attachments: [Attachment]
     public var errorMessage: String?
+    /// 所属 group 的祖先路径（顶层 phase 为空数组）。例：["PowerRail"], ["PowerRail", "Inner"]。
+    public var groupPath: [String]
 
     public init(name: String) {
         self.id = UUID()
@@ -30,6 +32,7 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
         self.measurements = [:]
         self.attachments = []
         self.errorMessage = nil
+        self.groupPath = []
     }
 
     /// 阶段持续时间

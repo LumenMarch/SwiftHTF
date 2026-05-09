@@ -42,40 +42,40 @@ func makeDemoPlan() -> TestPlan {
             return .continue
         }
 
-        Phase(name: "PowerOn") { @MainActor ctx in
-            let psu = ctx.getPlug(MockPowerSupply.self)
-            await psu.setOutput(3.3)
-            return .continue
-        }
-
-        Phase(
-            name: "VccCheck",
-            measurements: [
-                .named("vcc", unit: "V", description: "主电源")
-                    .inRange(3.0, 3.6)
-                    .withinPercent(of: 3.3, percent: 10)
-            ]
-        ) { @MainActor ctx in
-            let psu = ctx.getPlug(MockPowerSupply.self)
-            let v = await psu.readVoltage()
-            ctx.measure("vcc", v, unit: "V")
-            return .continue
+        Group("PowerRail") {
+            Phase(name: "PowerOn") { @MainActor ctx in
+                let psu = ctx.getPlug(MockPowerSupply.self)
+                await psu.setOutput(3.3)
+                return .continue
+            }
+            Phase(
+                name: "VccCheck",
+                measurements: [
+                    .named("vcc", unit: "V", description: "主电源")
+                        .inRange(3.0, 3.6)
+                        .withinPercent(of: 3.3, percent: 10)
+                ]
+            ) { @MainActor ctx in
+                let psu = ctx.getPlug(MockPowerSupply.self)
+                let v = await psu.readVoltage()
+                ctx.measure("vcc", v, unit: "V")
+                return .continue
+            }
+            Phase(name: "DiagnosticSnapshot") { @MainActor ctx in
+                let log = """
+                [diag] vcc=3.30V ok
+                [diag] current=120mA ok
+                [diag] temp=42.1C ok
+                """
+                ctx.attach("diag.log", data: Data(log.utf8), mimeType: "text/plain")
+                return .continue
+            }
         }
 
         Phase(name: "Mode") { @MainActor ctx in
             let prompt = ctx.getPlug(PromptPlug.self)
             let idx = await prompt.requestChoice("选择测试档位", options: ["快速", "标准", "完整"])
             ctx.measure("mode_index", idx)
-            return .continue
-        }
-
-        Phase(name: "DiagnosticSnapshot") { @MainActor ctx in
-            let log = """
-            [diag] vcc=3.30V ok
-            [diag] current=120mA ok
-            [diag] temp=42.1C ok
-            """
-            ctx.attach("diag.log", data: Data(log.utf8), mimeType: "text/plain")
             return .continue
         }
     }

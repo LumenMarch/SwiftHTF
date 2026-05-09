@@ -65,39 +65,38 @@ func makePlan(config: TestConfig) -> TestPlan {
             return .continue
         }
 
-        Phase(name: "PowerOn") { @MainActor ctx in
-            let psu = ctx.getPlug(MockPowerSupply.self)
-            await psu.setOutput(vccTarget)
-            return .continue
-        }
-
-        Phase(
-            name: "VccCheck",
-            measurements: [
-                .named("vcc", unit: "V", description: "主电源电压")
-                    .inRange(vccLower, vccUpper)
-                    .withinPercent(of: vccTarget, percent: vccPercent)
-            ]
-        ) { @MainActor ctx in
-            let psu = ctx.getPlug(MockPowerSupply.self)
-            let v = await psu.readVoltage()
-            ctx.measure("vcc", v, unit: "V")
-            return .continue
+        Group("PowerRail") {
+            Phase(name: "PowerOn") { @MainActor ctx in
+                let psu = ctx.getPlug(MockPowerSupply.self)
+                await psu.setOutput(vccTarget)
+                return .continue
+            }
+            Phase(
+                name: "VccCheck",
+                measurements: [
+                    .named("vcc", unit: "V", description: "主电源电压")
+                        .inRange(vccLower, vccUpper)
+                        .withinPercent(of: vccTarget, percent: vccPercent)
+                ]
+            ) { @MainActor ctx in
+                let psu = ctx.getPlug(MockPowerSupply.self)
+                let v = await psu.readVoltage()
+                ctx.measure("vcc", v, unit: "V")
+                return .continue
+            }
+            Phase(name: "DiagnosticSnapshot") { @MainActor ctx in
+                let log = """
+                [diag] vcc=3.30V ok
+                [diag] current=120mA ok
+                [diag] temp=42.1C ok
+                """
+                ctx.attach("diag.log", data: Data(log.utf8), mimeType: "text/plain")
+                return .continue
+            }
         }
 
         Phase(name: "FlakyTest", retryCount: 3) { @MainActor _ in
             return Bool.random() ? .continue : .retry
-        }
-
-        Phase(name: "DiagnosticSnapshot") { @MainActor ctx in
-            // 模拟一段诊断日志附件
-            let log = """
-            [diag] vcc=3.30V ok
-            [diag] current=120mA ok
-            [diag] temp=42.1C ok
-            """
-            ctx.attach("diag.log", data: Data(log.utf8), mimeType: "text/plain")
-            return .continue
         }
     }
 }
