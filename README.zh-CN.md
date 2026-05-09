@@ -5,20 +5,30 @@
 [![Platforms](https://img.shields.io/badge/Platforms-macOS%2012%2B-blue.svg)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-一个现代 Swift 硬件测试框架，灵感来自 [OpenHTF](https://github.com/google/openhtf)。声明式编写产线 / Bring-up / 实验室测试计划，运行在 `actor` 隔离的执行器中，通过 `AsyncStream` 观测事件，并以 JSON / CSV 形式输出测试记录。
+一个现代 Swift 硬件测试框架，灵感来自 [OpenHTF](https://github.com/google/openhtf)。声明式编写产线 / Bring-up / 实验室测试计划，运行在 `actor` 隔离的执行器中，通过 `AsyncStream` 观测事件，并以 JSON / CSV 形式输出测试记录。配套 `SwiftHTFUI` 库可直接接入 SwiftUI。
 
 [English](README.md)
 
 ## 特性
 
 - **声明式测试计划** —— 用 `@resultBuilder` DSL 组合 `Phase`，原生支持 `if` / `for` / `#available` 分支。
-- **严格并发** —— 基于 Swift `actor` 构建并启用 `StrictConcurrency`：执行器状态串行化，phase 代码运行在 `@MainActor`，Plug 隔离方式由你决定。
-- **重试 / 超时 / 验证器** —— 直接声明 `lowerLimit` / `upperLimit` / `unit`，或挂载自定义 `Validator`。
-- **类型化测量** —— `ctx.measure("vcc", 3.3, unit: "V")` 通过 `AnyCodableValue` 记录任意 JSON 兼容值。
-- **可插拔硬件 (`Plug`)** —— 支持无参 `init()` 或工厂闭包注册；`setup` / `tearDown` 自动按顺序执行。
-- **事件流** —— 通过 `executor.events()` 订阅 `testStarted` / `phaseCompleted` / `log` / `testCompleted`。
+- **嵌套 PhaseGroup** —— `Group(name) { ... } setup: { ... } teardown: { ... }` 与 Phase 同级，可任意层级嵌套；group 内 `continueOnFail` 局部生效。
+- **声明式 Measurement** —— 在 phase 上预声明 `MeasurementSpec`，链式追加 validator (`inRange` / `equals` / `matchesRegex` / `withinPercent` / `notEmpty` / `marginalRange` / `custom`)，运行后写回 `Measurement.outcome`。
+- **三态 outcome** —— `pass` / `marginalPass` / `fail` / `error` / `skip`，支持靠近边界但仍合格的"放行但需关注"语义。
+- **运行时条件门 `runIf`** —— Phase 与 Group 都可挂 `runIf` 闭包，访问当前 `ctx.config` / 已收集的状态决定是否执行。
+- **测量重跑** —— `repeatOnMeasurementFail`（measurement 失败重跑）与 `retryCount`（异常 / 显式 retry）独立计数，互不消耗。
+- **故障诊断** —— `PhaseDiagnoser` 在 phase fail/.error 终态触发，可读 record + 写 `ctx.attach` / `ctx.measure` 留下调试线索；`Diagnosis` 带 severity / 故障码 / 任意 details。
+- **异常分流** —— `failureExceptions` 白名单：抛指定类型→`.fail`（业务失败），其他→`.error`（程序错误）。
+- **附件 `attach`** —— phase 内 `ctx.attach(name:data:mimeType:)` / `attachFromFile(_:)`，自动 base64 进 JSON、Console / CSV 摘要。
+- **配置 `TestConfig`** —— JSON 加载，phase 内 `ctx.config.string(...) / double(...) / value(_, as:)` 读取，零外部依赖。
+- **可插拔硬件 (`Plug`)** —— 支持 `init()` 或工厂闭包注册；声明 `dependencies` 后 `PlugManager` 自动拓扑排序，`setup(resolver:)` 注入已就绪的依赖。
+- **操作员交互 (`PromptPlug`)** —— phase 内 `await prompt.requestConfirm(...) / requestText(...) / requestChoice(...)` 挂起；UI 端用 `events()` 订阅 + `resolve(...)` 应答；面向 SwiftUI sheet 集成。
+- **多 DUT 并发 (`TestSession`)** —— 一个 `TestExecutor` 可派生多个 session 同时运行，各自独立 plug 实例 + 独立事件流；`executor.events()` 是聚合流。
+- **严格并发** —— Swift `actor` + `StrictConcurrency`，phase 代码 `@MainActor`，Plug 隔离方式由你决定。
+- **事件流** —— `AsyncStream<TestEvent>`：`testStarted` / `phaseCompleted` / `log` / `testCompleted`。
 - **输出回调** —— 内置 `ConsoleOutput` / `JSONOutput` / `CSVOutput`，可实现 `OutputCallback` 自定义。
-- **Codable 记录** —— `TestRecord` / `PhaseRecord` / `Measurement` 完整 JSON 往返。
+- **Codable 记录** —— `TestRecord` / `PhaseRecord` / `Measurement` / `Attachment` / `Diagnosis` 完整 JSON 往返。
+- **`SwiftHTFUI` 库** —— 现成的 `TestRunnerViewModel` / `PromptCoordinator` / `PromptSheetView`，直接接入 SwiftUI。
 
 ## 系统要求
 
@@ -36,7 +46,11 @@ dependencies: [
 targets: [
     .target(
         name: "YourTarget",
-        dependencies: ["SwiftHTF"]
+        dependencies: [
+            "SwiftHTF",
+            // SwiftUI 端再加：
+            .product(name: "SwiftHTFUI", package: "SwiftHTF")
+        ]
     )
 ]
 ```
@@ -46,80 +60,108 @@ targets: [
 ```swift
 import SwiftHTF
 
-// 1. 定义一个 Plug
 actor PowerSupply: PlugProtocol {
     private var voltage: Double = 0
     init() {}
     func setOutput(_ v: Double) async { voltage = v }
-    func readVoltage() async -> Double { voltage }
-    func setup() async throws { /* 建立连接 */ }
+    func readVoltage() async -> Double { voltage + Double.random(in: -0.05...0.05) }
+    func setup() async throws {}
     func tearDown() async { voltage = 0 }
 }
 
-// 2. 构建测试计划
 @MainActor
-func makePlan() -> TestPlan {
-    TestPlan(name: "DemoBoard") {
-        Phase(name: "PowerOn") { ctx in
-            let psu = ctx.getPlug(PowerSupply.self)
-            await psu.setOutput(3.3)
-            return .continue
+func makePlan(config: TestConfig) -> TestPlan {
+    let vccLower = config.double("vcc.lower") ?? 3.0
+    let vccUpper = config.double("vcc.upper") ?? 3.6
+
+    return TestPlan(name: "DemoBoard") {
+        // 操作员确认
+        Phase(name: "OperatorReady") { @MainActor ctx in
+            let prompt = ctx.getPlug(PromptPlug.self)
+            return await prompt.requestConfirm("放好治具？") ? .continue : .stop
         }
 
-        Phase(name: "VccCheck", lowerLimit: "3.0", upperLimit: "3.6", unit: "V") { ctx in
-            let psu = ctx.getPlug(PowerSupply.self)
-            let v = await psu.readVoltage()
-            ctx.setValue("VccCheck", String(format: "%.3f", v))
-            ctx.measure("vcc", v, unit: "V")
-            return .continue
+        // 嵌套 Group + 声明式 measurement + diagnoser
+        Group("PowerRail") {
+            Phase(name: "PowerOn") { @MainActor ctx in
+                await ctx.getPlug(PowerSupply.self).setOutput(3.3)
+                return .continue
+            }
+            Phase(
+                name: "VccCheck",
+                measurements: [
+                    .named("vcc", unit: "V")
+                        .inRange(vccLower, vccUpper)        // 硬限值
+                        .marginalRange(3.2, 3.4)            // 警告带
+                        .withinPercent(of: 3.3, percent: 10)
+                ],
+                diagnosers: [
+                    ClosureDiagnoser("vcc-overshoot") { @MainActor record, ctx in
+                        guard let v = record.measurements["vcc"]?.value.asDouble,
+                              v > vccUpper else { return [] }
+                        ctx.attach("trace.log", data: Data("v=\(v)".utf8), mimeType: "text/plain")
+                        return [Diagnosis(code: "VCC_OVERSHOOT", message: "vcc=\(v)")]
+                    }
+                ]
+            ) { @MainActor ctx in
+                let v = await ctx.getPlug(PowerSupply.self).readVoltage()
+                ctx.measure("vcc", v, unit: "V")
+                return .continue
+            }
         }
     }
 }
 
-// 3. 运行
 @MainActor
 func run() async {
-    let plan = makePlan()
+    let cfg = TestConfig(values: [
+        "vcc.lower": .double(3.0), "vcc.upper": .double(3.6)
+    ])
     let executor = TestExecutor(
-        plan: plan,
+        plan: makePlan(config: cfg),
+        config: cfg,
         outputCallbacks: [ConsoleOutput()]
     )
     await executor.register(PowerSupply.self)
-
-    // 可选：订阅事件流
-    let listener = Task { [executor] in
-        for await event in await executor.events() {
-            if case .phaseCompleted(let r) = event {
-                print("phase \(r.name) -> \(r.outcome.rawValue)")
-            }
-        }
-    }
+    await executor.register(PromptPlug.self)
 
     let record = await executor.execute(serialNumber: "SN-0001")
-    listener.cancel()
-    print("结果: \(record.outcome.rawValue)")
+    print("Outcome: \(record.outcome.rawValue)")
 }
 ```
 
 ## 概念
 
-### `TestPlan` 与 `Phase`
+### TestPlan / Phase / PhaseGroup
 
-`TestPlan` 是一个有名字的 `Phase` 序列，可选 `setup` / `teardown`。`@TestPlanBuilder` 让你自由混用循环和条件：
+`TestPlan` 是一棵 `PhaseNode` 树，叶子是 `Phase`，分支是 `Group`。`@TestPlanBuilder` 让你自由混用 Phase / Group / 循环 / 条件：
 
 ```swift
 TestPlan(name: "Smoke") {
     Phase(name: "Connect") { _ in .continue }
+
+    Group("RFTests", continueOnFail: true) {
+        for band in [.low, .mid, .high] {
+            Phase(name: "RF_\(band)") { _ in .continue }
+        }
+    } setup: {
+        Phase(name: "Cal") { _ in .continue }
+    } teardown: {
+        Phase(name: "RF_Off") { _ in .continue }
+    }
+
     if config.includeBootTest {
         Phase(name: "Boot") { _ in .continue }
-    }
-    for sensor in sensors {
-        Phase(name: "Read_\(sensor.id)") { _ in .continue }
     }
 }
 ```
 
-每个 phase 返回 `PhaseResult`：
+执行语义：
+- 一组节点按顺序跑；遇 fail 看局部 `continueOnFail` 决定是否继续兄弟。
+- Group：`setup` → `children` → `teardown` 严格串行；`teardown` 必跑（即使 setup 失败也跑）。
+- `PhaseRecord.groupPath` 记录祖先链，便于 UI 渲染层级。
+
+每个 Phase 闭包返回 `PhaseResult`：
 
 | 返回值             | 含义                                     |
 |--------------------|------------------------------------------|
@@ -129,65 +171,207 @@ TestPlan(name: "Smoke") {
 | `.skip`            | 跳过                                     |
 | `.stop`            | 立即终止整个测试                         |
 
-### Plug
+### 声明式 Measurement & 三态 outcome
 
-`PlugProtocol` 抽象任意硬件适配器，实现可以自由选择隔离方式（`actor` / `@MainActor` / 非 isolated 都行）：
+在 Phase 上预声明 `MeasurementSpec`，phase 内 `ctx.measure(...)` 写入后 `harvest` 自动跑 validator：
 
 ```swift
-actor PowerSupply: PlugProtocol {
-    init() {}
-    func setup() async throws { /* 连接硬件 */ }
-    func tearDown() async { /* 断开 */ }
+Phase(
+    name: "VccCheck",
+    measurements: [
+        .named("vcc", unit: "V", description: "主电源")
+            .inRange(3.0, 3.6)
+            .marginalRange(3.1, 3.5)         // [3.1, 3.5] 外 → marginalPass
+            .withinPercent(of: 3.3, percent: 5)
+    ]
+) { @MainActor ctx in
+    ctx.measure("vcc", 3.07, unit: "V")
+    return .continue
 }
-
-// 注册：
-await executor.register(PowerSupply.self)
-// 或带工厂闭包：
-await executor.register(PowerSupply.self) { PowerSupply(port: "/dev/tty.usbserial-1") }
 ```
 
-`PlugManager` 在 `@MainActor` 上构造实例（一次），phase 运行前调用 `setup()`，结束（含失败路径）保证 `tearDown()` 执行。
+聚合规则（按优先级）：fail > marginal > pass。
+- 任一 measurement `fail` → phase `.fail`，record `.fail`。
+- 否则任一 marginal → phase `.marginalPass`，record 全过且至少一个 marginal → record `.marginalPass`。
+- `Measurement.outcome` / `validatorMessages` 写回 `PhaseRecord.measurements[name]`，输出层据此着色。
 
-### 验证器与限值
+未声明的 measurement 仍允许写入（视为辅助信息，不参与聚合）。
 
-Phase 可以直接声明 `lowerLimit` / `upperLimit`（字符串，支持 `0x...` 十六进制）与 `unit`，框架自动包成 `RangeValidator`。需要字符串 / 正则 / 非空校验时，附加一组自定义 `Validator`。
+### Phase 高级字段
+
+```swift
+Phase(
+    name: "VccCheck",
+    timeout: 5,                          // 超时（秒）
+    retryCount: 2,                       // 异常 / 显式 .retry 的重试次数
+    measurements: [.named("vcc").inRange(3.0, 3.6)],
+    runIf: { @MainActor ctx in           // 运行时条件门 — false 时 outcome=.skip
+        ctx.config.bool("vcc.enabled") ?? true
+    },
+    repeatOnMeasurementFail: 3,          // measurement 失败时再读 N 次
+    diagnosers: [                        // fail / .error 终态时跑
+        ClosureDiagnoser("trace") { record, ctx in [...] }
+    ],
+    failureExceptions: [DUTRefusedToBoot.self]   // 白名单异常 → .fail；其他 → .error
+) { ... }
+```
+
+`runIf` 可挂在 Group 上 —— false 时合成一条 `outcome=.skip` 的 PhaseRecord，setup/children/teardown 全不跑。
+
+### 附件（Attachments）
+
+```swift
+Phase(name: "Diag") { @MainActor ctx in
+    ctx.attach("trace.log", data: Data("...".utf8), mimeType: "text/plain")
+    try ctx.attachFromFile(URL(fileURLWithPath: "/tmp/scope.png"))   // 按扩展名推 mime
+    return .continue
+}
+```
+
+`PhaseRecord.attachments: [Attachment]` 持久化；JSON 输出时 `Data` 默认 base64；Console 显示 `📎 name (mime, size)`；CSV 加 `attachments_count` 列。
+
+### 配置（TestConfig）
+
+```swift
+let cfg = try TestConfig.load(from: URL(fileURLWithPath: "config.json"))
+let executor = TestExecutor(plan: plan, config: cfg)
+
+// phase 内：
+let lower = ctx.config.double("vcc.lower") ?? 3.0
+struct Limits: Decodable { let lower: Double; let upper: Double }
+let lim = ctx.config.value("vcc", as: Limits.self)
+```
+
+内部为 `[String: AnyCodableValue]`；零外部依赖；JSON 加载顶层必须是对象。
+
+### Plug 依赖注入
+
+```swift
+final class CorePlug: PlugProtocol { init() {} }
+
+final class MidPlug: PlugProtocol {
+    init() {}
+    static var dependencies: [any PlugProtocol.Type] { [CorePlug.self] }
+    func setup(resolver: PlugResolver) async throws {
+        let core = await resolver.get(CorePlug.self)!
+        // 初始化时已能拿到 core 引用
+    }
+}
+```
+
+`PlugManager.setupAll` 拓扑排序构造 plug，依赖先于被依赖者 setup；循环依赖 / 缺失依赖会抛 `PlugManagerError`，TestExecutor 把它转为 `record.outcome=.error`。
+
+### PromptPlug & SwiftUI 集成
+
+phase 内挂起等待操作员：
+
+```swift
+Phase(name: "ScanSerial") { @MainActor ctx in
+    let prompt = ctx.getPlug(PromptPlug.self)
+    let sn = await prompt.requestText("请扫码", placeholder: "SN-...")
+    ctx.serialNumber = sn          // 回灌进 record
+    return .continue
+}
+```
+
+UI 端用 `SwiftHTFUI` 现成视图模型与 sheet：
+
+```swift
+import SwiftUI
+import SwiftHTF
+import SwiftHTFUI
+
+struct ContentView: View {
+    @StateObject private var runner: TestRunnerViewModel
+    @StateObject private var prompts = PromptCoordinator()
+    private let plug = PromptPlug()
+
+    init() {
+        let exec = TestExecutor(plan: makePlan())
+        self._runner = StateObject(wrappedValue: TestRunnerViewModel(executor: exec))
+    }
+
+    var body: some View {
+        VStack {
+            Button("开始测试") { runner.start() }
+                .disabled(runner.isRunning)
+            List(runner.phases) { phase in
+                Text("\(phase.name) → \(phase.outcome.rawValue)")
+            }
+        }
+        .task { await prompts.attach(to: plug) }
+        .sheet(item: $prompts.current) { req in
+            PromptSheetView(request: req) { resp in
+                prompts.resolve(req.id, response: resp)
+            }
+        }
+    }
+}
+```
+
+`TestRunnerViewModel` 暴露 `phases` / `logLines` / `outcome` / `isRunning` / `record` / `serialNumber` 等 `@Published` 属性，订阅 `session.events()`，多 session 模式不会混流。
+
+### TestConfig 与多 DUT 并发
+
+`TestExecutor` 是一个 plan / config / plug 注册的容器；可派生多个并发 `TestSession`：
+
+```swift
+let executor = TestExecutor(plan: plan, config: cfg)
+await executor.register(PowerSupply.self)
+
+// 单 DUT（向后兼容）：
+let record = await executor.execute(serialNumber: "SN-1")
+
+// 多 DUT 并发：
+async let s1 = executor.startSession(serialNumber: "DUT-1")
+async let s2 = executor.startSession(serialNumber: "DUT-2")
+let session1 = await s1
+let session2 = await s2
+async let r1 = session1.record()
+async let r2 = session2.record()
+let (rec1, rec2) = await (r1, r2)
+```
+
+每个 session 持有独立的 plug 实例（factory 重新构造，独立 setup/tearDown）。`executor.events()` 是聚合流；要区分多 session 改订阅 `session.events()`。
 
 ### 事件流
-
-`executor.events()` 返回 `AsyncStream<TestEvent>`。该方法 actor 隔离，因此在 `execute()` 之前建立的订阅不会丢事件。取消消费任务或跳出 for-await 即自动解除订阅。
 
 ```swift
 for await event in await executor.events() {
     switch event {
-    case .testStarted(let name, let sn): print("start \(name) sn=\(sn ?? "-")")
-    case .phaseCompleted(let r):         print("phase \(r.name) \(r.outcome.rawValue)")
-    case .log(let msg):                  print("log: \(msg)")
-    case .testCompleted(let r):          print("done \(r.outcome.rawValue)")
+    case .testStarted(let name, let sn): ...
+    case .phaseCompleted(let r):         ...
+    case .log(let msg):                  ...
+    case .testCompleted(let r):          ...
     }
 }
 ```
+
+`session.events()` 带 replay buffer —— 新订阅会被补发已 emit 的全部历史事件，因此即使 `startSession` 内部立刻 start session，调用方再 events() 也不会丢 `.testStarted`。
 
 ### 输出回调
 
 实现 `OutputCallback.save(record:)` 即可对接任意输出。内置：
 
-- `ConsoleOutput` —— 控制台摘要
+- `ConsoleOutput` —— 控制台摘要（含 measurement / 附件 / 故障码）
 - `JSONOutput(directory:)` —— 每条记录一个 ISO8601 命名的 JSON 文件
-- `CSVOutput(directory:)` —— 每条记录一个 CSV，每行一个 phase
+- `CSVOutput(directory:)` —— 每条记录一个 CSV，每行一个 phase（含 `attachments_count` / `diagnoses_count` 列）
 
 ## Demo
 
 ```bash
+# CLI 演示（自动应答 prompt，输出落 $TMPDIR/SwiftHTFDemo/）
 swift run SwiftHTFDemo
-```
 
-JSON / CSV 输出落在 `$TMPDIR/SwiftHTFDemo/`。
+# SwiftUI 主窗口（手动应答 prompt，phase 表格 + live log）
+swift run SwiftHTFSwiftUIDemo
+```
 
 ## 开发
 
 ```bash
 swift build
-swift test
+swift test          # 160 用例
 ```
 
 ## 许可证
