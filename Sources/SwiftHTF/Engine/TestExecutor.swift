@@ -40,7 +40,10 @@ public actor TestExecutor {
     }
 
     /// 注册 Plug 类型（工厂闭包，用于需要构造器参数的场景）
-    public func register<T: PlugProtocol>(_ type: T.Type, factory: @escaping @Sendable () -> T) async {
+    public func register<T: PlugProtocol>(
+        _ type: T.Type,
+        factory: @escaping @MainActor @Sendable () -> T
+    ) async {
         await plugManager.register(type, factory: factory)
     }
 

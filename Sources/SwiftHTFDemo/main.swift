@@ -43,6 +43,21 @@ func makePlan() -> TestPlan {
             }
         ]
     ) {
+        Phase(name: "OperatorReady") { @MainActor ctx in
+            let prompt = ctx.getPlug(PromptPlug.self)
+            let ok = await prompt.requestConfirm("放好治具并按确认？")
+            ctx.measure("operator_ready", ok)
+            return ok ? .continue : .stop
+        }
+
+        Phase(name: "ScanSerial") { @MainActor ctx in
+            let prompt = ctx.getPlug(PromptPlug.self)
+            let sn = await prompt.requestText("请扫码 / 输入 SN", placeholder: "SN-...")
+            ctx.serialNumber = sn
+            ctx.measure("scanned_sn", sn)
+            return .continue
+        }
+
         Phase(name: "PowerOn") { @MainActor ctx in
             let psu = ctx.getPlug(MockPowerSupply.self)
             await psu.setOutput(3.3)
@@ -65,6 +80,15 @@ func makePlan() -> TestPlan {
 
 // MARK: - 入口
 
+/// 持有跨 actor 的 PromptPlug 引用。CLI demo 用它模拟 SwiftUI 的 `@State`：
+/// SwiftUI 端做法是在 `View` 里 `let prompt = PromptPlug()`，然后注册时用相同实例的 factory。
+private final class PromptHolder: @unchecked Sendable {
+    private var value: PromptPlug?
+    private let lock = NSLock()
+    func set(_ p: PromptPlug) { lock.lock(); defer { lock.unlock() }; value = p }
+    func get() -> PromptPlug? { lock.lock(); defer { lock.unlock() }; return value }
+}
+
 @MainActor
 func run() async {
     let plan = makePlan()
@@ -82,6 +106,14 @@ func run() async {
 
     await executor.register(MockPowerSupply.self)
 
+    let promptHolder = PromptHolder()
+    await executor.register(PromptPlug.self, factory: { @MainActor in
+        let p = PromptPlug()
+        promptHolder.set(p)
+        return p
+    })
+
+    // 事件流监听
     let listener = Task { [executor] in
         for await event in await executor.events() {
             switch event {
@@ -97,8 +129,33 @@ func run() async {
         }
     }
 
-    let record = await executor.execute(serialNumber: "SN-DEMO-0001")
+    // PromptPlug 监听：等 plug 实例化后订阅，自动应答（CLI 模拟 SwiftUI 弹窗）。
+    // SwiftUI 真实场景里换成在 View 中 `for await req in plug.events()` 触发 sheet。
+    let promptListener = Task { @MainActor in
+        var plug: PromptPlug?
+        for _ in 0..<200 {
+            if let p = promptHolder.get() { plug = p; break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard let plug else { return }
+        for await req in plug.events() {
+            switch req.kind {
+            case .confirm(let msg):
+                print("[prompt] confirm: \(msg) -> auto YES")
+                plug.resolve(id: req.id, response: .confirm(true))
+            case .text(let msg, _):
+                print("[prompt] text: \(msg) -> auto SN-DEMO-0001")
+                plug.resolve(id: req.id, response: .text("SN-DEMO-0001"))
+            case .choice(let msg, let opts):
+                print("[prompt] choice: \(msg) options=\(opts) -> auto 0")
+                plug.resolve(id: req.id, response: .choice(0))
+            }
+        }
+    }
+
+    let record = await executor.execute()
     listener.cancel()
+    promptListener.cancel()
 
     print("\n输出目录: \(outputDir.path)")
     print("最终结果: \(record.outcome.rawValue)")
