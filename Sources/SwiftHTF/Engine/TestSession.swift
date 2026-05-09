@@ -54,7 +54,9 @@ public actor TestSession {
         }
         continuations[id] = continuation
         continuation.onTermination = { [weak self] _ in
-            Task { await self?.detach(id) }
+            Task { [weak self] in
+                await self?.detach(id)
+            }
         }
         return stream
     }
