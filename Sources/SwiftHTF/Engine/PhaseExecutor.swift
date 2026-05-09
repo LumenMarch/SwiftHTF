@@ -148,13 +148,23 @@ public final class PhaseExecutor {
         var failureMessages: [String] = []
 
         var collected: [String: Measurement] = [:]
+        var anyMeasurementMarginal = false
+        var marginalMessages: [String] = []
+
         for (name, m) in context.measurements {
             var updated = m
             if let spec = specsByName[name] {
-                let (ok, messages) = spec.run(on: m.value)
-                updated.outcome = ok ? .pass : .fail
+                let (verdict, messages) = spec.run(on: m.value)
                 updated.validatorMessages = messages
-                if !ok {
+                switch verdict {
+                case .pass:
+                    updated.outcome = .pass
+                case .marginal:
+                    updated.outcome = .marginalPass
+                    anyMeasurementMarginal = true
+                    marginalMessages.append(contentsOf: messages.map { "[\(name)] \($0)" })
+                case .fail:
+                    updated.outcome = .fail
                     anyMeasurementFailed = true
                     failureMessages.append(contentsOf: messages.map { "[\(name)] \($0)" })
                 }
@@ -166,13 +176,18 @@ public final class PhaseExecutor {
         context.measurements = [:]
         context.attachments = []
 
-        // 仅当 phase 当前还是 pass 时升级为 fail（不要覆盖已存在的 .skip/.error/.fail）
-        if anyMeasurementFailed && r.outcome == .pass {
-            r.outcome = .fail
-            if r.errorMessage == nil {
-                r.errorMessage = failureMessages.joined(separator: "; ")
+        // 仅当 phase 当前还是 pass 时升级（不覆盖 .skip/.error/.fail）
+        if r.outcome == .pass {
+            if anyMeasurementFailed {
+                r.outcome = .fail
+                if r.errorMessage == nil {
+                    r.errorMessage = failureMessages.joined(separator: "; ")
+                }
+                log("[\(phase.definition.name)] ---> FAIL (measurement): \(failureMessages.joined(separator: "; "))")
+            } else if anyMeasurementMarginal {
+                r.outcome = .marginalPass
+                log("[\(phase.definition.name)] ---> MARGINAL: \(marginalMessages.joined(separator: "; "))")
             }
-            log("[\(phase.definition.name)] ---> FAIL (measurement): \(failureMessages.joined(separator: "; "))")
         }
         return r
     }

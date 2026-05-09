@@ -3,6 +3,8 @@ import Foundation
 /// 测试结果
 public enum TestOutcome: String, Sendable, Codable {
     case pass = "PASS"
+    /// 全部 phase 通过，但至少一个 phase 是 marginalPass — 算放行但需关注
+    case marginalPass = "MARGINAL_PASS"
     case fail = "FAIL"
     case error = "ERROR"
     case timeout = "TIMEOUT"

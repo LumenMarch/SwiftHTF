@@ -3,6 +3,8 @@ import Foundation
 /// 阶段执行结果
 public enum PhaseOutcomeType: String, Sendable, Codable {
     case pass = "PASS"
+    /// 在硬限值内但落入 marginal 警告带 — 算通过但需关注
+    case marginalPass = "MARGINAL_PASS"
     case fail = "FAIL"
     case skip = "SKIP"
     case error = "ERROR"

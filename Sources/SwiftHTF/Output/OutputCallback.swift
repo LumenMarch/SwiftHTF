@@ -17,6 +17,15 @@ private func formatBytes(_ n: Int) -> String {
     return String(format: "%.2f MB", kb / 1024)
 }
 
+private func phaseSymbol(_ o: PhaseOutcomeType) -> String {
+    switch o {
+    case .pass: return "✓"
+    case .marginalPass: return "≈"
+    case .skip: return "⏭"
+    case .fail, .error: return "✗"
+    }
+}
+
 /// 控制台输出回调
 public struct ConsoleOutput: OutputCallback {
     public init() {}
@@ -30,12 +39,12 @@ public struct ConsoleOutput: OutputCallback {
         lines.append("Duration: \(String(format: "%.2f", record.duration))s")
         lines.append("Phases:")
         for phase in record.phases {
-            let mark = phase.outcome == .pass ? "✓" : "✗"
+            let mark = phaseSymbol(phase.outcome)
             let value = phase.value ?? "N/A"
             let prefix = phase.groupPath.isEmpty ? "" : "[" + phase.groupPath.joined(separator: " / ") + "] "
             lines.append("  \(mark) \(prefix)\(phase.name): \(value) (\(String(format: "%.2f", phase.duration))s)")
             for (name, m) in phase.measurements.sorted(by: { $0.key < $1.key }) {
-                let mmark = m.outcome == .pass ? "✓" : "✗"
+                let mmark = phaseSymbol(m.outcome)
                 let unit = m.unit.map { " \($0)" } ?? ""
                 var line = "      \(mmark) \(name) = \(m.value.displayString)\(unit)"
                 if !m.validatorMessages.isEmpty {

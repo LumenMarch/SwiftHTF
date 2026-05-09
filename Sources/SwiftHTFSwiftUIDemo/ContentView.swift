@@ -115,6 +115,7 @@ private struct OutcomeBadge: View {
     private var color: Color {
         switch outcome {
         case .pass: return .green
+        case .marginalPass: return .yellow
         case .fail, .error, .timeout, .aborted: return .red
         }
     }
@@ -156,6 +157,7 @@ private struct PhaseRow: View {
     private var symbol: String {
         switch phase.outcome {
         case .pass: return "✓"
+        case .marginalPass: return "≈"
         case .fail: return "✗"
         case .skip: return "⏭"
         case .error: return "⚠"
@@ -164,6 +166,7 @@ private struct PhaseRow: View {
     private var color: Color {
         switch phase.outcome {
         case .pass: return .green
+        case .marginalPass: return .yellow
         case .fail, .error: return .red
         case .skip: return .gray
         }
@@ -199,8 +202,7 @@ private struct MeasurementRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(measurement.outcome == .pass ? "✓" : "✗")
-                .foregroundColor(measurement.outcome == .pass ? .green : .red)
+            Text(symbol).foregroundColor(color)
             Text(name).font(.caption.bold())
             Text("=").foregroundColor(.secondary).font(.caption)
             Text(measurement.value.displayString).font(.caption)
@@ -209,11 +211,28 @@ private struct MeasurementRow: View {
             }
             if !measurement.validatorMessages.isEmpty {
                 Text(measurement.validatorMessages.joined(separator: "; "))
-                    .font(.caption2).foregroundColor(.red)
+                    .font(.caption2).foregroundColor(color)
             }
             Spacer()
         }
         .padding(.leading, 16)
+    }
+
+    private var symbol: String {
+        switch measurement.outcome {
+        case .pass: return "✓"
+        case .marginalPass: return "≈"
+        case .skip: return "⏭"
+        case .fail, .error: return "✗"
+        }
+    }
+    private var color: Color {
+        switch measurement.outcome {
+        case .pass: return .green
+        case .marginalPass: return .yellow
+        case .skip: return .gray
+        case .fail, .error: return .red
+        }
     }
 }
 

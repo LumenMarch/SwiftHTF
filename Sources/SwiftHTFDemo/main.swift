@@ -79,6 +79,10 @@ func makePlan(config: TestConfig) -> TestPlan {
                 measurements: [
                     .named("vcc", unit: "V", description: "主电源电压")
                         .inRange(vccLower, vccUpper)
+                        .marginalRange(
+                            config.double("vcc.marginalLower") ?? 3.2,
+                            config.double("vcc.marginalUpper") ?? 3.4
+                        )
                         .withinPercent(of: vccTarget, percent: vccPercent)
                 ]
             ) { @MainActor ctx in
@@ -118,14 +122,17 @@ private final class PromptHolder: @unchecked Sendable {
 @MainActor
 func run() async {
     // 内嵌一份 demo 用的 config（实际项目中会用 TestConfig.load(from: url)）
-    // 把 "powerRail.enabled" 改为 false 可让 PowerRail 整个 group（含 measurements / 附件）
-    // 通过 runIf 跳过；输出会留下一条 group 名为 PowerRail、outcome=SKIP 的合成记录。
+    // 配置说明：
+    // - "powerRail.enabled" = false 让 PowerRail 整 group 通过 runIf 跳过（合成 SKIP 记录）。
+    // - vcc.marginalLower / vcc.marginalUpper 收紧到 [3.30, 3.31] 等窄带可看到 MARGINAL_PASS 路径。
     let cfgJSON = #"""
     {
         "plan.name": "DemoBoard",
         "vcc.target": 3.3,
         "vcc.lower": 3.0,
         "vcc.upper": 3.6,
+        "vcc.marginalLower": 3.2,
+        "vcc.marginalUpper": 3.4,
         "vcc.percent": 10,
         "powerRail.enabled": true,
         "prompts.ready": "放好治具并按确认（来自 config）"

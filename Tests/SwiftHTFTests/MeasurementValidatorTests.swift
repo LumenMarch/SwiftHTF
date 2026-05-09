@@ -78,12 +78,12 @@ final class MeasurementValidatorTests: XCTestCase {
             .inRange(3.0, 3.6)
             .withinPercent(of: 3.3, percent: 10)
         XCTAssertEqual(spec.validators.count, 2)
-        let (ok, msgs) = spec.run(on: .double(3.3))
-        XCTAssertTrue(ok)
+        let (v1, msgs) = spec.run(on: .double(3.3))
+        if case .pass = v1 {} else { XCTFail("expected pass") }
         XCTAssertTrue(msgs.isEmpty)
 
-        let (ok2, msgs2) = spec.run(on: .double(2.5))
-        XCTAssertFalse(ok2)
+        let (v2, msgs2) = spec.run(on: .double(2.5))
+        if case .fail = v2 {} else { XCTFail("expected fail") }
         XCTAssertEqual(msgs2.count, 2, "两个 validator 都应报错")
     }
 

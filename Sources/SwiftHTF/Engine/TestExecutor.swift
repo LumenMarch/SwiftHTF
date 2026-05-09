@@ -170,6 +170,13 @@ public actor TestExecutor {
             )
         }
 
+        // 全部 phase 通过但有 marginal → 整体升级为 .marginalPass
+        if record.outcome == .pass
+            && record.phases.contains(where: { $0.outcome == .marginalPass })
+        {
+            record.outcome = .marginalPass
+        }
+
         if Task.isCancelled && record.outcome != .fail {
             record.outcome = .aborted
         }

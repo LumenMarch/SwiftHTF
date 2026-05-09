@@ -17,6 +17,8 @@ public protocol MeasurementValidator: Sendable {
 /// Measurement 校验结果
 public enum MeasurementValidationResult: Sendable, Equatable {
     case pass
+    /// 在硬限值内但接近边界 — 警告但放行
+    case marginal(String)
     case fail(String)
 }
 
@@ -72,17 +74,33 @@ public struct MeasurementSpec: Sendable {
         )
     }
 
-    /// 跑全部 validator，返回 (pass?, messages)
-    func run(on value: AnyCodableValue) -> (passed: Bool, messages: [String]) {
+    /// 跑全部 validator 聚合三态判定
+    /// - Returns: 三态 verdict + 触发的所有消息
+    func run(on value: AnyCodableValue) -> (verdict: Verdict, messages: [String]) {
         var messages: [String] = []
-        var ok = true
+        var failed = false
+        var marginal = false
         for v in validators {
-            if case .fail(let msg) = v.validate(value) {
-                ok = false
+            switch v.validate(value) {
+            case .pass: break
+            case .marginal(let msg):
+                marginal = true
+                messages.append(msg)
+            case .fail(let msg):
+                failed = true
                 messages.append(msg)
             }
         }
-        return (ok, messages)
+        if failed { return (.fail, messages) }
+        if marginal { return (.marginal, messages) }
+        return (.pass, messages)
+    }
+
+    /// 三态 spec 判定（fail 优先级最高 → marginal → pass）
+    enum Verdict: Sendable {
+        case pass
+        case marginal
+        case fail
     }
 }
 
@@ -122,6 +140,15 @@ public extension MeasurementSpec {
     /// 字符串 / 数组 / 对象非空（忽略前后空白）
     func notEmpty() -> MeasurementSpec {
         with(NotEmptyMeasurementValidator())
+    }
+
+    /// 数值在 [lower, upper] 内为 pass，否则报 marginal（不算 fail）。
+    /// 与 `inRange` 配合使用：硬限值用 `inRange`，警告带用 `marginalRange`。
+    /// ```swift
+    /// .named("vcc").inRange(3.0, 3.6).marginalRange(3.1, 3.5)
+    /// ```
+    func marginalRange(_ lower: Double, _ upper: Double) -> MeasurementSpec {
+        with(MarginalRangeValidator(lower: lower, upper: upper))
     }
 
     /// 自定义闭包
@@ -230,6 +257,34 @@ public struct WithinPercentValidator: MeasurementValidator {
     }
 
     public var label: String { "within_percent(\(target), ±\(percent)%)" }
+}
+
+/// Marginal 范围：值落在 [lower, upper] 内为 pass，否则报 .marginal。
+/// 不发 fail —— 硬限值由 `InRangeValidator` 保证；这里只产生警告状态。
+public struct MarginalRangeValidator: MeasurementValidator {
+    public let lower: Double
+    public let upper: Double
+
+    public init(lower: Double, upper: Double) {
+        self.lower = lower
+        self.upper = upper
+    }
+
+    public func validate(_ value: AnyCodableValue) -> MeasurementValidationResult {
+        guard let n = value.asDouble else {
+            // 非数字交给其他 validator 处理；这里不强加 fail
+            return .pass
+        }
+        if n < lower {
+            return .marginal("\(label): \(n) 接近下限 \(lower)")
+        }
+        if n > upper {
+            return .marginal("\(label): \(n) 接近上限 \(upper)")
+        }
+        return .pass
+    }
+
+    public var label: String { "marginal_range[\(lower), \(upper)]" }
 }
 
 /// 非空：string trim 非空 / array 非空 / object 非空 / null 视为空
