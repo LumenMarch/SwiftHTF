@@ -42,7 +42,7 @@ public final class PhaseExecutor {
                             phaseRecord.outcome = .pass
                             phaseRecord.value = value
                             log("[\(phase.definition.name)] ---> \(value)")
-                            return harvest(phaseRecord)
+                            return harvest(phaseRecord, phase: phase)
                         case .fail(let message):
                             if attempts < maxAttempts {
                                 log("[\(phase.definition.name)] ---> Retry \(attempts): \(message)")
@@ -53,13 +53,13 @@ public final class PhaseExecutor {
                             phaseRecord.value = value
                             phaseRecord.errorMessage = message
                             log("[\(phase.definition.name)] ---> FAIL: \(message)")
-                            return harvest(phaseRecord)
+                            return harvest(phaseRecord, phase: phase)
                         }
                     } else {
                         phaseRecord.endTime = Date()
                         phaseRecord.outcome = .pass
                         log("[\(phase.definition.name)] ---> Continue")
-                        return harvest(phaseRecord)
+                        return harvest(phaseRecord, phase: phase)
                     }
 
                 case .failAndContinue:
@@ -67,7 +67,7 @@ public final class PhaseExecutor {
                     phaseRecord.outcome = .fail
                     phaseRecord.value = context.getValue(phase.definition.name)
                     log("[\(phase.definition.name)] ---> FAIL (continue)")
-                    return harvest(phaseRecord)
+                    return harvest(phaseRecord, phase: phase)
 
                 case .retry:
                     if attempts < maxAttempts {
@@ -78,19 +78,19 @@ public final class PhaseExecutor {
                     phaseRecord.outcome = .error
                     phaseRecord.errorMessage = TestError.maxRetriesExceeded.errorDescription
                     log("[\(phase.definition.name)] ---> ERROR: Max retries exceeded")
-                    return harvest(phaseRecord)
+                    return harvest(phaseRecord, phase: phase)
 
                 case .skip:
                     phaseRecord.endTime = Date()
                     phaseRecord.outcome = .skip
                     log("[\(phase.definition.name)] ---> SKIP")
-                    return harvest(phaseRecord)
+                    return harvest(phaseRecord, phase: phase)
 
                 case .stop:
                     phaseRecord.endTime = Date()
                     phaseRecord.outcome = .error
                     log("[\(phase.definition.name)] ---> STOP")
-                    return harvest(phaseRecord)
+                    return harvest(phaseRecord, phase: phase)
                 }
 
             } catch {
@@ -105,7 +105,7 @@ public final class PhaseExecutor {
                 phaseRecord.outcome = .error
                 phaseRecord.errorMessage = error.localizedDescription
                 log("[\(phase.definition.name)] ---> ERROR: \(error.localizedDescription)")
-                return harvest(phaseRecord)
+                return harvest(phaseRecord, phase: phase)
             }
         }
 
@@ -113,14 +113,45 @@ public final class PhaseExecutor {
         phaseRecord.endTime = Date()
         phaseRecord.outcome = .error
         phaseRecord.errorMessage = (lastError ?? TestError.unknown("Unknown error")).localizedDescription
-        return harvest(phaseRecord)
+        return harvest(phaseRecord, phase: phase)
     }
 
-    /// 将 ctx.measurements 收集到 phaseRecord，并清空 ctx 给下个 phase 使用
-    private func harvest(_ record: PhaseRecord) -> PhaseRecord {
+    /// 将 ctx.measurements 收集到 phaseRecord，按 phase.measurements 中的 spec 跑 validator，
+    /// 写回每条 measurement 的 outcome/validatorMessages；任一 measurement fail 时把 phase
+    /// 从 .pass 升级为 .fail。最后清空 ctx 给下个 phase 使用。
+    private func harvest(_ record: PhaseRecord, phase: Phase) -> PhaseRecord {
         var r = record
-        r.measurements = context.measurements
+        let specsByName: [String: MeasurementSpec] = Dictionary(
+            uniqueKeysWithValues: phase.measurements.map { ($0.name, $0) }
+        )
+        var anyMeasurementFailed = false
+        var failureMessages: [String] = []
+
+        var collected: [String: Measurement] = [:]
+        for (name, m) in context.measurements {
+            var updated = m
+            if let spec = specsByName[name] {
+                let (ok, messages) = spec.run(on: m.value)
+                updated.outcome = ok ? .pass : .fail
+                updated.validatorMessages = messages
+                if !ok {
+                    anyMeasurementFailed = true
+                    failureMessages.append(contentsOf: messages.map { "[\(name)] \($0)" })
+                }
+            }
+            collected[name] = updated
+        }
+        r.measurements = collected
         context.measurements = [:]
+
+        // 仅当 phase 当前还是 pass 时升级为 fail（不要覆盖已存在的 .skip/.error/.fail）
+        if anyMeasurementFailed && r.outcome == .pass {
+            r.outcome = .fail
+            if r.errorMessage == nil {
+                r.errorMessage = failureMessages.joined(separator: "; ")
+            }
+            log("[\(phase.definition.name)] ---> FAIL (measurement): \(failureMessages.joined(separator: "; "))")
+        }
         return r
     }
 

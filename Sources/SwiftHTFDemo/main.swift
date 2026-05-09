@@ -64,10 +64,16 @@ func makePlan() -> TestPlan {
             return .continue
         }
 
-        Phase(name: "VccCheck", lowerLimit: "3.0", upperLimit: "3.6", unit: "V") { @MainActor ctx in
+        Phase(
+            name: "VccCheck",
+            measurements: [
+                .named("vcc", unit: "V", description: "主电源电压")
+                    .inRange(3.0, 3.6)
+                    .withinPercent(of: 3.3, percent: 10)
+            ]
+        ) { @MainActor ctx in
             let psu = ctx.getPlug(MockPowerSupply.self)
             let v = await psu.readVoltage()
-            ctx.setValue("VccCheck", String(format: "%.3f", v))
             ctx.measure("vcc", v, unit: "V")
             return .continue
         }

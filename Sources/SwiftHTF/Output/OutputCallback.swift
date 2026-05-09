@@ -26,6 +26,15 @@ public struct ConsoleOutput: OutputCallback {
             let mark = phase.outcome == .pass ? "✓" : "✗"
             let value = phase.value ?? "N/A"
             lines.append("  \(mark) \(phase.name): \(value) (\(String(format: "%.2f", phase.duration))s)")
+            for (name, m) in phase.measurements.sorted(by: { $0.key < $1.key }) {
+                let mmark = m.outcome == .pass ? "✓" : "✗"
+                let unit = m.unit.map { " \($0)" } ?? ""
+                var line = "      \(mmark) \(name) = \(m.value.displayString)\(unit)"
+                if !m.validatorMessages.isEmpty {
+                    line += "  [\(m.validatorMessages.joined(separator: "; "))]"
+                }
+                lines.append(line)
+            }
         }
         lines.append("===================")
         print(lines.joined(separator: "\n"))

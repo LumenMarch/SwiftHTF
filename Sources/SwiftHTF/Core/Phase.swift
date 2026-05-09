@@ -35,7 +35,10 @@ public struct Phase: Identifiable, Sendable {
     public let lowerLimit: String?
     public let upperLimit: String?
     public let unit: String?
-    
+    /// 声明式 measurement 规约。仅对通过 `ctx.measure(name, ...)` 写入的同名测量生效，
+    /// 不影响旧的 `phase.value` 字符串验证路径（仍由 `lowerLimit/upperLimit` + `validators` 控制）。
+    public let measurements: [MeasurementSpec]
+
     /// 初始化
     /// - Parameters:
     ///   - definition: 阶段定义
@@ -43,20 +46,23 @@ public struct Phase: Identifiable, Sendable {
     ///   - lowerLimit: 下限
     ///   - upperLimit: 上限
     ///   - unit: 单位
+    ///   - measurements: 声明式 measurement 规约
     public init(
         definition: PhaseDefinition,
         validators: [Validator] = [],
         lowerLimit: String? = nil,
         upperLimit: String? = nil,
-        unit: String? = nil
+        unit: String? = nil,
+        measurements: [MeasurementSpec] = []
     ) {
         self.definition = definition
         self.validators = validators
         self.lowerLimit = lowerLimit
         self.upperLimit = upperLimit
         self.unit = unit
+        self.measurements = measurements
     }
-    
+
     /// 便捷初始化
     public init(
         name: String,
@@ -65,6 +71,7 @@ public struct Phase: Identifiable, Sendable {
         lowerLimit: String? = nil,
         upperLimit: String? = nil,
         unit: String? = nil,
+        measurements: [MeasurementSpec] = [],
         execute: @escaping @Sendable @MainActor (TestContext) async throws -> PhaseResult
     ) {
         self.definition = PhaseDefinition(
@@ -77,5 +84,6 @@ public struct Phase: Identifiable, Sendable {
         self.lowerLimit = lowerLimit
         self.upperLimit = upperLimit
         self.unit = unit
+        self.measurements = measurements
     }
 }
