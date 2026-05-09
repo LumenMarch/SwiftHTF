@@ -51,6 +51,9 @@ public struct Group: Sendable, Identifiable {
     public let children: [PhaseNode]
     public let teardown: [PhaseNode]
     public let continueOnFail: Bool
+    /// 运行时条件门：返回 false 时整 group 跳过（合成一条 skip PhaseRecord，
+    /// setup / children / teardown 全不跑），不计 fail。
+    public let runIf: RunIfPredicate?
 
     public init(
         id: UUID = UUID(),
@@ -58,7 +61,8 @@ public struct Group: Sendable, Identifiable {
         setup: [PhaseNode] = [],
         children: [PhaseNode],
         teardown: [PhaseNode] = [],
-        continueOnFail: Bool = false
+        continueOnFail: Bool = false,
+        runIf: RunIfPredicate? = nil
     ) {
         self.id = id
         self.name = name
@@ -66,6 +70,7 @@ public struct Group: Sendable, Identifiable {
         self.children = children
         self.teardown = teardown
         self.continueOnFail = continueOnFail
+        self.runIf = runIf
     }
 }
 
@@ -76,6 +81,7 @@ public extension Group {
     init(
         _ name: String,
         continueOnFail: Bool = false,
+        runIf: RunIfPredicate? = nil,
         @TestPlanBuilder children: () -> [PhaseNode]
     ) {
         self.init(
@@ -83,7 +89,8 @@ public extension Group {
             setup: [],
             children: children(),
             teardown: [],
-            continueOnFail: continueOnFail
+            continueOnFail: continueOnFail,
+            runIf: runIf
         )
     }
 
@@ -91,6 +98,7 @@ public extension Group {
     init(
         _ name: String,
         continueOnFail: Bool = false,
+        runIf: RunIfPredicate? = nil,
         @TestPlanBuilder children: () -> [PhaseNode],
         @TestPlanBuilder setup: () -> [PhaseNode] = { [] },
         @TestPlanBuilder teardown: () -> [PhaseNode] = { [] }
@@ -100,7 +108,8 @@ public extension Group {
             setup: setup(),
             children: children(),
             teardown: teardown(),
-            continueOnFail: continueOnFail
+            continueOnFail: continueOnFail,
+            runIf: runIf
         )
     }
 }

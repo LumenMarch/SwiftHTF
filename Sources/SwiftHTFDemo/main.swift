@@ -65,7 +65,10 @@ func makePlan(config: TestConfig) -> TestPlan {
             return .continue
         }
 
-        Group("PowerRail") {
+        Group(
+            "PowerRail",
+            runIf: { @MainActor ctx in ctx.config.bool("powerRail.enabled") ?? true }
+        ) {
             Phase(name: "PowerOn") { @MainActor ctx in
                 let psu = ctx.getPlug(MockPowerSupply.self)
                 await psu.setOutput(vccTarget)
@@ -115,6 +118,8 @@ private final class PromptHolder: @unchecked Sendable {
 @MainActor
 func run() async {
     // 内嵌一份 demo 用的 config（实际项目中会用 TestConfig.load(from: url)）
+    // 把 "powerRail.enabled" 改为 false 可让 PowerRail 整个 group（含 measurements / 附件）
+    // 通过 runIf 跳过；输出会留下一条 group 名为 PowerRail、outcome=SKIP 的合成记录。
     let cfgJSON = #"""
     {
         "plan.name": "DemoBoard",
@@ -122,6 +127,7 @@ func run() async {
         "vcc.lower": 3.0,
         "vcc.upper": 3.6,
         "vcc.percent": 10,
+        "powerRail.enabled": true,
         "prompts.ready": "放好治具并按确认（来自 config）"
     }
     """#

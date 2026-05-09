@@ -206,6 +206,20 @@ public actor TestExecutor {
             if Task.isCancelled { outcome.aborted = true; return outcome }
             switch node {
             case .phase(let phase):
+                // runIf 检查
+                if let runIf = phase.runIf {
+                    let proceed = await runIf(context)
+                    if !proceed {
+                        let skipRecord = makeSkipRecord(
+                            name: phase.definition.name,
+                            groupPath: groupPath,
+                            reason: "runIf=false"
+                        )
+                        record.phases.append(skipRecord)
+                        emit(.phaseCompleted(skipRecord))
+                        continue
+                    }
+                }
                 var phaseRecord = await runPhase(phase, context: context)
                 phaseRecord.groupPath = groupPath
                 record.phases.append(phaseRecord)
@@ -229,13 +243,24 @@ public actor TestExecutor {
         return outcome
     }
 
-    /// 执行单个 Group：setup → children（按 group.continueOnFail）→ teardown（必跑）
+    /// 执行单个 Group：先 runIf 门控，然后 setup → children（按 group.continueOnFail）→ teardown（必跑）
     private func runGroup(
         _ g: Group,
         parentPath: [String],
         into record: inout TestRecord,
         context: TestContext
     ) async -> GroupOutcome {
+        // group runIf：false 时合成一条 skip 记录，跳整段
+        if let runIf = g.runIf {
+            let proceed = await runIf(context)
+            if !proceed {
+                let skipRecord = makeSkipRecord(name: g.name, groupPath: parentPath, reason: "runIf=false")
+                record.phases.append(skipRecord)
+                emit(.phaseCompleted(skipRecord))
+                return GroupOutcome(failed: false, aborted: false)
+            }
+        }
+
         let path = parentPath + [g.name]
         var groupOutcome = GroupOutcome()
 
@@ -267,6 +292,16 @@ public actor TestExecutor {
         )
 
         return groupOutcome
+    }
+
+    /// 构造一条合成的 skip 记录（runIf 跳过场景）
+    private func makeSkipRecord(name: String, groupPath: [String], reason: String) -> PhaseRecord {
+        var r = PhaseRecord(name: name)
+        r.groupPath = groupPath
+        r.outcome = .skip
+        r.errorMessage = reason
+        r.endTime = r.startTime
+        return r
     }
 
     private nonisolated func runPhase(_ phase: Phase, context: TestContext) async -> PhaseRecord {

@@ -27,6 +27,10 @@ public struct PhaseDefinition: Identifiable, Sendable {
     }
 }
 
+/// 运行时条件门：phase / group 在执行前查询。返回 false 时整节点 outcome 标 .skip
+/// 且不计入失败。
+public typealias RunIfPredicate = @Sendable @MainActor (TestContext) async -> Bool
+
 /// 测试阶段（带验证规则）
 public struct Phase: Identifiable, Sendable {
     public let id: UUID = UUID()
@@ -38,6 +42,8 @@ public struct Phase: Identifiable, Sendable {
     /// 声明式 measurement 规约。仅对通过 `ctx.measure(name, ...)` 写入的同名测量生效，
     /// 不影响旧的 `phase.value` 字符串验证路径（仍由 `lowerLimit/upperLimit` + `validators` 控制）。
     public let measurements: [MeasurementSpec]
+    /// 运行时条件门：返回 false 跳过此 phase（outcome=.skip，不计 fail）
+    public let runIf: RunIfPredicate?
 
     /// 初始化
     /// - Parameters:
@@ -47,13 +53,15 @@ public struct Phase: Identifiable, Sendable {
     ///   - upperLimit: 上限
     ///   - unit: 单位
     ///   - measurements: 声明式 measurement 规约
+    ///   - runIf: 运行时条件门
     public init(
         definition: PhaseDefinition,
         validators: [Validator] = [],
         lowerLimit: String? = nil,
         upperLimit: String? = nil,
         unit: String? = nil,
-        measurements: [MeasurementSpec] = []
+        measurements: [MeasurementSpec] = [],
+        runIf: RunIfPredicate? = nil
     ) {
         self.definition = definition
         self.validators = validators
@@ -61,6 +69,7 @@ public struct Phase: Identifiable, Sendable {
         self.upperLimit = upperLimit
         self.unit = unit
         self.measurements = measurements
+        self.runIf = runIf
     }
 
     /// 便捷初始化
@@ -72,6 +81,7 @@ public struct Phase: Identifiable, Sendable {
         upperLimit: String? = nil,
         unit: String? = nil,
         measurements: [MeasurementSpec] = [],
+        runIf: RunIfPredicate? = nil,
         execute: @escaping @Sendable @MainActor (TestContext) async throws -> PhaseResult
     ) {
         self.definition = PhaseDefinition(
@@ -85,5 +95,6 @@ public struct Phase: Identifiable, Sendable {
         self.upperLimit = upperLimit
         self.unit = unit
         self.measurements = measurements
+        self.runIf = runIf
     }
 }
