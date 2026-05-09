@@ -28,7 +28,8 @@ public final class PhaseExecutor {
         while true {
             let record = await executeAttempt(phase: phase)
             let measurementCausedFail = record.outcome == .fail
-                && record.measurements.values.contains { $0.outcome == .fail }
+                && (record.measurements.values.contains { $0.outcome == .fail }
+                    || record.traces.values.contains { $0.outcome == .fail })
             if measurementCausedFail && measurementRepeatsUsed < maxMeasurementRepeats {
                 measurementRepeatsUsed += 1
                 log("[\(phase.definition.name)] ---> Repeat (measurement fail \(measurementRepeatsUsed)/\(maxMeasurementRepeats))")
@@ -44,19 +45,23 @@ public final class PhaseExecutor {
         }
     }
 
-    /// 跑 phase.diagnosers 并合并副作用（measurement / attachment）进 record。
-    /// diagnoser 写的 measurement 不再跑 spec validation —— 视为辅助调试信息。
+    /// 跑 phase.diagnosers 并合并副作用（measurement / attachment / trace）进 record。
+    /// diagnoser 写的 measurement / trace 不再跑 spec validation —— 视为辅助调试信息。
     private func runDiagnosers(record: PhaseRecord, phase: Phase) async -> PhaseRecord {
         var r = record
         for diagnoser in phase.diagnosers {
             let diagnoses = await diagnoser.diagnose(record: r, context: context)
             r.diagnoses.append(contentsOf: diagnoses)
-            // diagnoser 副作用：合并新写入的 ctx.measurements / ctx.attachments
+            // diagnoser 副作用：合并新写入的 ctx.measurements / ctx.series / ctx.attachments
             for (name, m) in context.measurements {
                 r.measurements[name] = m
             }
+            for (name, s) in context.series {
+                r.traces[name] = s
+            }
             r.attachments.append(contentsOf: context.attachments)
             context.measurements = [:]
+            context.series = [:]
             context.attachments = []
             for d in diagnoses {
                 log("[\(phase.definition.name)] ---> Diagnosis (\(d.severity.rawValue)) \(d.code): \(d.message)")
@@ -68,6 +73,11 @@ public final class PhaseExecutor {
     private func executeAttempt(phase: Phase) async -> PhaseRecord {
         var phaseRecord = PhaseRecord(name: phase.definition.name)
         log("[\(phase.definition.name)] ---> Start")
+
+        // 注入 series spec，供 ctx.recordSeries 默认从中读取维度
+        context.seriesSpecs = Dictionary(
+            uniqueKeysWithValues: phase.series.map { ($0.name, $0) }
+        )
 
         var lastError: Error?
         var attempts = 0
@@ -172,21 +182,24 @@ public final class PhaseExecutor {
         return phase.failureExceptions.contains { ObjectIdentifier($0) == errorId }
     }
 
-    /// 将 ctx.measurements 收集到 phaseRecord，按 phase.measurements 中的 spec 跑 validator，
-    /// 写回每条 measurement 的 outcome/validatorMessages；任一 measurement fail 时把 phase
-    /// 从 .pass 升级为 .fail。最后清空 ctx 给下个 phase 使用。
+    /// 将 ctx.measurements / ctx.series 收集到 phaseRecord，按 spec 跑 validator，写回各自
+    /// outcome/validatorMessages；任一 measurement 或 trace fail 时把 phase 从 .pass 升级为 .fail；
+    /// 任一 marginal 时升级为 .marginalPass。最后清空 ctx 给下个 phase 使用。
     private func harvest(_ record: PhaseRecord, phase: Phase) -> PhaseRecord {
         var r = record
         let specsByName: [String: MeasurementSpec] = Dictionary(
             uniqueKeysWithValues: phase.measurements.map { ($0.name, $0) }
         )
+        let seriesSpecsByName: [String: SeriesMeasurementSpec] = Dictionary(
+            uniqueKeysWithValues: phase.series.map { ($0.name, $0) }
+        )
         var anyMeasurementFailed = false
         var failureMessages: [String] = []
-
-        var collected: [String: Measurement] = [:]
         var anyMeasurementMarginal = false
         var marginalMessages: [String] = []
 
+        // 单点 measurements
+        var collected: [String: Measurement] = [:]
         for (name, m) in context.measurements {
             var updated = m
             if let spec = specsByName[name] {
@@ -208,8 +221,34 @@ public final class PhaseExecutor {
             collected[name] = updated
         }
         r.measurements = collected
+
+        // Series traces
+        var collectedSeries: [String: SeriesMeasurement] = [:]
+        for (name, s) in context.series {
+            var updated = s
+            if let spec = seriesSpecsByName[name] {
+                let (verdict, messages) = spec.run(on: s.samples)
+                updated.validatorMessages = messages
+                switch verdict {
+                case .pass:
+                    updated.outcome = .pass
+                case .marginal:
+                    updated.outcome = .marginalPass
+                    anyMeasurementMarginal = true
+                    marginalMessages.append(contentsOf: messages.map { "[\(name)] \($0)" })
+                case .fail:
+                    updated.outcome = .fail
+                    anyMeasurementFailed = true
+                    failureMessages.append(contentsOf: messages.map { "[\(name)] \($0)" })
+                }
+            }
+            collectedSeries[name] = updated
+        }
+        r.traces = collectedSeries
+
         r.attachments = context.attachments
         context.measurements = [:]
+        context.series = [:]
         context.attachments = []
 
         // 仅当 phase 当前还是 pass 时升级（不覆盖 .skip/.error/.fail）

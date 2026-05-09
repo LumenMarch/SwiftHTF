@@ -19,6 +19,8 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
     public var outcome: PhaseOutcomeType
     public var value: String?
     public var measurements: [String: Measurement]
+    /// 多维 measurement 结果（IV 曲线、扫频、扫温等）。与 `measurements` 平行存放。
+    public var traces: [String: SeriesMeasurement]
     public var attachments: [Attachment]
     public var errorMessage: String?
     /// 所属 group 的祖先路径（顶层 phase 为空数组）。例：["PowerRail"], ["PowerRail", "Inner"]。
@@ -34,6 +36,7 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
         self.outcome = .pass
         self.value = nil
         self.measurements = [:]
+        self.traces = [:]
         self.attachments = []
         self.errorMessage = nil
         self.groupPath = []

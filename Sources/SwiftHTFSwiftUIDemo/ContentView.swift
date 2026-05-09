@@ -143,6 +143,9 @@ private struct PhaseRow: View {
             ForEach(phase.measurements.sorted(by: { $0.key < $1.key }), id: \.key) { entry in
                 MeasurementRow(name: entry.key, measurement: entry.value)
             }
+            ForEach(phase.traces.sorted(by: { $0.key < $1.key }), id: \.key) { entry in
+                TraceRow(name: entry.key, trace: entry.value)
+            }
             ForEach(Array(phase.attachments.enumerated()), id: \.offset) { (_, a) in
                 AttachmentRow(attachment: a)
             }
@@ -220,6 +223,47 @@ private struct AttachmentRow: View {
         let kb = Double(n) / 1024
         if kb < 1024 { return String(format: "%.1f KB", kb) }
         return String(format: "%.2f MB", kb / 1024)
+    }
+}
+
+private struct TraceRow: View {
+    let name: String
+    let trace: SeriesMeasurement
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("∿").foregroundColor(color)
+            Text(name).font(.caption.bold())
+            Text("(\(layoutLabel))").foregroundColor(.secondary).font(.caption2)
+            Text("\(trace.samples.count) samples").font(.caption)
+            if !trace.validatorMessages.isEmpty {
+                Text(trace.validatorMessages.joined(separator: "; "))
+                    .font(.caption2).foregroundColor(color).lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding(.leading, 16)
+    }
+
+    private var layoutLabel: String {
+        let dims = trace.dimensions.map { d -> String in
+            if let u = d.unit { return "\(d.name)/\(u)" }
+            return d.name
+        }
+        let val: String = {
+            if let u = trace.value.unit { return "\(trace.value.name)/\(u)" }
+            return trace.value.name
+        }()
+        return (dims + [val]).joined(separator: ", ")
+    }
+
+    private var color: Color {
+        switch trace.outcome {
+        case .pass: return .green
+        case .marginalPass: return .yellow
+        case .skip: return .gray
+        case .fail, .error: return .red
+        }
     }
 }
 

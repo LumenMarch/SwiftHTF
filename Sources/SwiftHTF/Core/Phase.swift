@@ -42,6 +42,9 @@ public struct Phase: Identifiable, Sendable {
     /// 声明式 measurement 规约。仅对通过 `ctx.measure(name, ...)` 写入的同名测量生效，
     /// 不影响旧的 `phase.value` 字符串验证路径（仍由 `lowerLimit/upperLimit` + `validators` 控制）。
     public let measurements: [MeasurementSpec]
+    /// 声明式多维 measurement（series / trace）规约。仅对通过
+    /// `ctx.recordSeries(name) { ... }` 写入的同名 trace 生效。
+    public let series: [SeriesMeasurementSpec]
     /// 运行时条件门：返回 false 跳过此 phase（outcome=.skip，不计 fail）
     public let runIf: RunIfPredicate?
     /// 当 phase 闭包返回 `.continue` 但有 measurement 验证失败时，最多再尝试几次。
@@ -61,6 +64,7 @@ public struct Phase: Identifiable, Sendable {
         upperLimit: String? = nil,
         unit: String? = nil,
         measurements: [MeasurementSpec] = [],
+        series: [SeriesMeasurementSpec] = [],
         runIf: RunIfPredicate? = nil,
         repeatOnMeasurementFail: Int = 0,
         diagnosers: [any PhaseDiagnoser] = [],
@@ -72,6 +76,7 @@ public struct Phase: Identifiable, Sendable {
         self.upperLimit = upperLimit
         self.unit = unit
         self.measurements = measurements
+        self.series = series
         self.runIf = runIf
         self.repeatOnMeasurementFail = repeatOnMeasurementFail
         self.diagnosers = diagnosers
@@ -87,6 +92,7 @@ public struct Phase: Identifiable, Sendable {
         upperLimit: String? = nil,
         unit: String? = nil,
         measurements: [MeasurementSpec] = [],
+        series: [SeriesMeasurementSpec] = [],
         runIf: RunIfPredicate? = nil,
         repeatOnMeasurementFail: Int = 0,
         diagnosers: [any PhaseDiagnoser] = [],
@@ -104,6 +110,7 @@ public struct Phase: Identifiable, Sendable {
         self.upperLimit = upperLimit
         self.unit = unit
         self.measurements = measurements
+        self.series = series
         self.runIf = runIf
         self.repeatOnMeasurementFail = repeatOnMeasurementFail
         self.diagnosers = diagnosers

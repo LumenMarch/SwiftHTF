@@ -20,6 +20,13 @@ public final class TestContext {
     /// 当前 phase 收集的类型化测量值（每次 phase 开始时由 PhaseExecutor 重置）
     public internal(set) var measurements: [String: Measurement] = [:]
 
+    /// 当前 phase 收集的多维 measurement / trace（每次 phase 开始时由 PhaseExecutor 重置）
+    public internal(set) var series: [String: SeriesMeasurement] = [:]
+
+    /// 当前 phase 注入的 series spec 字典（PhaseExecutor 在 attempt 起始注入；
+    /// `recordSeries` 默认从这里取维度/单位）
+    internal var seriesSpecs: [String: SeriesMeasurementSpec] = [:]
+
     /// 当前 phase 收集的二进制附件（按写入顺序，每次 phase 开始时由 PhaseExecutor 重置）
     public internal(set) var attachments: [Attachment] = []
 
@@ -73,6 +80,43 @@ public final class TestContext {
             name: name,
             value: codedValue,
             unit: unit
+        )
+    }
+
+    // MARK: - 多维 measurement（trace）
+
+    /// 记录一段多维测量（IV 曲线、扫频、扫温等）。在 block 内通过 `SeriesRecorder`
+    /// 增量 append 采样行；block 返回后整段 trace 写入 `ctx.series[name]` 供 harvest 读取。
+    ///
+    /// 维度优先级：显式传入 > phase.series 中同名 spec > 默认 (`value` 列名占位)
+    ///
+    /// ```swift
+    /// try await ctx.recordSeries("iv_curve") { recorder in
+    ///     for v in stride(from: 0.0, through: 5.0, by: 0.1) {
+    ///         let i = await dut.measureCurrent(at: v)
+    ///         recorder.append(v, i)
+    ///     }
+    /// }
+    /// ```
+    public func recordSeries(
+        _ name: String,
+        dimensions: [Dimension]? = nil,
+        value: Dimension? = nil,
+        description: String? = nil,
+        _ block: (SeriesRecorder) async throws -> Void
+    ) async rethrows {
+        let spec = seriesSpecs[name]
+        let dims = dimensions ?? spec?.dimensions ?? []
+        let val = value ?? spec?.value ?? Dimension(name: "value")
+        let desc = description ?? spec?.description
+        let recorder = SeriesRecorder(name: name, columnLayout: dims + [val])
+        try await block(recorder)
+        series[name] = SeriesMeasurement(
+            name: name,
+            description: desc,
+            dimensions: dims,
+            value: val,
+            samples: recorder.samples
         )
     }
 

@@ -70,6 +70,33 @@ func makeDemoPlan() -> TestPlan {
                 ctx.attach("diag.log", data: Data(log.utf8), mimeType: "text/plain")
                 return .continue
             }
+            Phase(
+                name: "VRampSweep",
+                series: [
+                    .named("v_ramp")
+                        .dimension("V_set", unit: "V")
+                        .value("V_meas", unit: "V")
+                        .lengthAtLeast(5)
+                        .each { sample in
+                            guard let want = sample[0].asDouble,
+                                  let got = sample[1].asDouble else { return .pass }
+                            let err = abs(got - want)
+                            if err > 0.2 { return .fail("err=\(err)V") }
+                            if err > 0.1 { return .marginal("err=\(err)V") }
+                            return .pass
+                        }
+                ]
+            ) { @MainActor ctx in
+                let psu = ctx.getPlug(MockPowerSupply.self)
+                await ctx.recordSeries("v_ramp") { rec in
+                    for v in stride(from: 0.0, through: 3.3, by: 0.5) {
+                        await psu.setOutput(v)
+                        let measured = await psu.readVoltage()
+                        rec.append(v, measured)
+                    }
+                }
+                return .continue
+            }
         }
 
         Phase(name: "Mode") { @MainActor ctx in
