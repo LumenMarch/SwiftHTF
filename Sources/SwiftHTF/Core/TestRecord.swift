@@ -13,7 +13,9 @@ public enum TestOutcome: String, Sendable, Codable {
 public struct TestRecord: Sendable, Codable, Identifiable {
     public let id: UUID
     public let planName: String
-    public let serialNumber: String?
+    /// 序列号。execute(serialNumber:) 的入参作为初值，phase 内可通过 `ctx.serialNumber = ...`
+    /// 修改（例如扫码后回填），收尾时由 TestExecutor 同步回 record。
+    public var serialNumber: String?
     public let startTime: Date
     public var endTime: Date?
     public var outcome: TestOutcome

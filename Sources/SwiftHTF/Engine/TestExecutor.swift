@@ -136,6 +136,7 @@ public actor TestExecutor {
                     record.outcome = .fail
                     await runTeardown(record: &record, context: context)
                     await plugManager.tearDownAll()
+                    await syncContextBack(into: &record, context: context)
                     record.endTime = Date()
                     await notifyOutputs(record)
                     emit(.testCompleted(record))
@@ -162,10 +163,17 @@ public actor TestExecutor {
 
         await runTeardown(record: &record, context: context)
         await plugManager.tearDownAll()
+        await syncContextBack(into: &record, context: context)
         record.endTime = Date()
         await notifyOutputs(record)
         emit(.testCompleted(record))
         return record
+    }
+
+    /// 把 phase 期间在 ctx 上发生的可变状态（如 ctx.serialNumber = 扫码值）回灌到 record。
+    private func syncContextBack(into record: inout TestRecord, context: TestContext) async {
+        let sn = await MainActor.run { context.serialNumber }
+        record.serialNumber = sn
     }
 
     private func runTeardown(record: inout TestRecord, context: TestContext) async {

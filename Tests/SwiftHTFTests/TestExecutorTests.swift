@@ -182,6 +182,42 @@ final class TestExecutorTests: XCTestCase {
         XCTAssertEqual(phaseRecord?.measurements["status"]?.value.asString, "OK")
     }
 
+    // MARK: - Serial number 回灌
+
+    func testSerialNumberFromCtxIsPersisted() async {
+        let plan = TestPlan(name: "scan") {
+            Phase(name: "scan_sn") { @MainActor ctx in
+                ctx.serialNumber = "SN-FROM-CTX"
+                return .continue
+            }
+        }
+        let executor = TestExecutor(plan: plan)
+        let record = await executor.execute()
+        XCTAssertEqual(record.serialNumber, "SN-FROM-CTX")
+    }
+
+    func testCtxSerialNumberOverridesInitialArg() async {
+        let plan = TestPlan(name: "override") {
+            Phase(name: "rescan") { @MainActor ctx in
+                XCTAssertEqual(ctx.serialNumber, "SN-INIT")
+                ctx.serialNumber = "SN-RESCANNED"
+                return .continue
+            }
+        }
+        let executor = TestExecutor(plan: plan)
+        let record = await executor.execute(serialNumber: "SN-INIT")
+        XCTAssertEqual(record.serialNumber, "SN-RESCANNED")
+    }
+
+    func testSerialNumberStaysNilWhenUnset() async {
+        let plan = TestPlan(name: "nil") {
+            Phase(name: "noop") { _ in .continue }
+        }
+        let executor = TestExecutor(plan: plan)
+        let record = await executor.execute()
+        XCTAssertNil(record.serialNumber)
+    }
+
     // MARK: - Codable record
 
     func testRecordEncodesToJSON() async throws {
