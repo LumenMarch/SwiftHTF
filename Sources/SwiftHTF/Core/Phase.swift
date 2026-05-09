@@ -2,7 +2,7 @@ import Foundation
 
 /// 测试阶段定义
 public struct PhaseDefinition: Identifiable, Sendable {
-    public let id: UUID = UUID()
+    public let id: UUID = .init()
     public let name: String
     public let timeout: TimeInterval?
     public let retryCount: Int
@@ -33,7 +33,7 @@ public typealias RunIfPredicate = @Sendable @MainActor (TestContext) async -> Bo
 
 /// 测试阶段（带验证规则）
 public struct Phase: Identifiable, Sendable {
-    public let id: UUID = UUID()
+    public let id: UUID = .init()
     public let definition: PhaseDefinition
     /// 声明式 measurement 规约。仅对通过 `ctx.measure(name, ...)` 写入的同名测量生效。
     public let measurements: [MeasurementSpec]
@@ -83,7 +83,7 @@ public struct Phase: Identifiable, Sendable {
         failureExceptions: [any Error.Type] = [],
         execute: @escaping @Sendable @MainActor (TestContext) async throws -> PhaseResult
     ) {
-        self.definition = PhaseDefinition(
+        definition = PhaseDefinition(
             name: name,
             timeout: timeout,
             retryCount: retryCount,

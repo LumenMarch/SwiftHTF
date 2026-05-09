@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class AttachmentTests: XCTestCase {
-
     func testAttachInline() async {
         let plan = TestPlan(name: "attach") {
             Phase(name: "snap") { @MainActor ctx in

@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import SwiftHTF
 
 /// 把 `PromptPlug.events()` 转成 SwiftUI 友好的 `@Published` 状态。
@@ -33,15 +33,15 @@ public final class PromptCoordinator: ObservableObject {
     public func attach(to plug: PromptPlug) async {
         detach()
         self.plug = plug
-        self.detached = false
+        detached = false
         let stream = plug.events()
         listener = Task { @MainActor [weak self] in
             for await req in stream {
                 guard let self else { return }
                 // detach 后即便仍有缓冲事件，也不再写 current
-                if self.detached { continue }
+                if detached { continue }
                 // 简单策略：若当前已有 prompt，覆盖之
-                self.current = req
+                current = req
             }
         }
     }

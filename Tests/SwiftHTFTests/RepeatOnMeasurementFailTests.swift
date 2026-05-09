@@ -1,14 +1,18 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 @MainActor
 final class RepeatOnMeasurementFailTests: XCTestCase {
-
     /// 计数器辅助
     private actor Counter {
         var count = 0
-        func increment() -> Int { count += 1; return count }
-        func value() -> Int { count }
+        func increment() -> Int {
+            count += 1; return count
+        }
+
+        func value() -> Int {
+            count
+        }
     }
 
     func testRepeatsAndEventuallyPasses() async {

@@ -44,7 +44,7 @@ public struct TestConfig: Sendable {
     }
 
     /// 解码到任意 Decodable 类型（通过 JSON 中转）
-    public func value<T: Decodable>(_ key: String, as type: T.Type) -> T? {
+    public func value<T: Decodable>(_ key: String, as _: T.Type) -> T? {
         guard let raw = values[key] else { return nil }
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(raw) else { return nil }
@@ -54,14 +54,25 @@ public struct TestConfig: Sendable {
 
     // MARK: - 便利访问器
 
-    public func string(_ key: String) -> String? { values[key]?.asString }
-    public func int(_ key: String) -> Int? { values[key]?.asInt }
-    public func double(_ key: String) -> Double? { values[key]?.asDouble }
-    public func bool(_ key: String) -> Bool? { values[key]?.asBool }
+    public func string(_ key: String) -> String? {
+        values[key]?.asString
+    }
+
+    public func int(_ key: String) -> Int? {
+        values[key]?.asInt
+    }
+
+    public func double(_ key: String) -> Double? {
+        values[key]?.asDouble
+    }
+
+    public func bool(_ key: String) -> Bool? {
+        values[key]?.asBool
+    }
 
     /// 数组（每项尝试转 T；无法转的项以 nil 占位被过滤）
     public func array<T>(_ key: String, as transform: (AnyCodableValue) -> T?) -> [T]? {
-        guard case .array(let arr) = values[key] else { return nil }
+        guard case let .array(arr) = values[key] else { return nil }
         return arr.compactMap(transform)
     }
 }

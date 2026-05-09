@@ -35,14 +35,14 @@ public final class PhaseExecutor {
             let measurementCausedFail = record.outcome == .fail
                 && (record.measurements.values.contains { $0.outcome == .fail }
                     || record.traces.values.contains { $0.outcome == .fail })
-            if measurementCausedFail && measurementRepeatsUsed < maxMeasurementRepeats {
+            if measurementCausedFail, measurementRepeatsUsed < maxMeasurementRepeats {
                 measurementRepeatsUsed += 1
                 log("[\(phase.definition.name)] ---> Repeat (measurement fail \(measurementRepeatsUsed)/\(maxMeasurementRepeats))")
                 continue
             }
             // 终态：outcome 已定。fail/error 时跑 diagnosers。
-            if (record.outcome == .fail || record.outcome == .error)
-                && !phase.diagnosers.isEmpty
+            if record.outcome == .fail || record.outcome == .error,
+               !phase.diagnosers.isEmpty
             {
                 return await runDiagnosers(record: record, phase: phase)
             }
@@ -55,7 +55,7 @@ public final class PhaseExecutor {
     private func runDiagnosers(record: PhaseRecord, phase: Phase) async -> PhaseRecord {
         var r = record
         // 暂时重启 logEmitter，让 diagnoser 内的 ctx.log 也能广播到事件流
-        let stringEmitter = self.emitLog
+        let stringEmitter = emitLog
         context.logEmitter = { entry in
             stringEmitter?("[\(entry.level.rawValue)] \(entry.message)")
         }
@@ -93,7 +93,7 @@ public final class PhaseExecutor {
         )
 
         // 注入 phase logger emitter，让 ctx.log 既写 phaseLogs 又广播到事件流
-        let stringEmitter = self.emitLog
+        let stringEmitter = emitLog
         context.logEmitter = { entry in
             stringEmitter?("[\(entry.level.rawValue)] \(entry.message)")
         }
@@ -270,11 +270,11 @@ public final class PhaseExecutor {
 
     private func executeWithTimeout(phase: Phase, context: TestContext) async throws -> PhaseResult {
         if let timeout = phase.definition.timeout {
-            return try await withTimeout(timeout) {
+            try await withTimeout(timeout) {
                 try await phase.definition.execute(context)
             }
         } else {
-            return try await phase.definition.execute(context)
+            try await phase.definition.execute(context)
         }
     }
 

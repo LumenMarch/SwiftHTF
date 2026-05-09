@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class PhaseGroupTests: XCTestCase {
-
     // MARK: - 顺序与路径
 
     func testGroupRunsSetupChildrenTeardownInOrder() async {

@@ -23,28 +23,30 @@ public struct Attachment: Sendable, Codable, Equatable {
     }
 
     /// 字节数（便于输出层显示，不参与 Codable）
-    public var size: Int { data.count }
+    public var size: Int {
+        data.count
+    }
 }
 
 // MARK: - 文件扩展名 → MIME 推断
 
-extension Attachment {
+public extension Attachment {
     /// 从文件扩展名推断 MIME；未知返回 `application/octet-stream`。
-    public static func mimeType(forPathExtension ext: String) -> String {
+    static func mimeType(forPathExtension ext: String) -> String {
         switch ext.lowercased() {
-        case "png": return "image/png"
-        case "jpg", "jpeg": return "image/jpeg"
-        case "gif": return "image/gif"
-        case "bmp": return "image/bmp"
-        case "tiff", "tif": return "image/tiff"
-        case "pdf": return "application/pdf"
-        case "txt", "log": return "text/plain"
-        case "csv": return "text/csv"
-        case "json": return "application/json"
-        case "xml": return "application/xml"
-        case "html", "htm": return "text/html"
-        case "zip": return "application/zip"
-        default: return "application/octet-stream"
+        case "png": "image/png"
+        case "jpg", "jpeg": "image/jpeg"
+        case "gif": "image/gif"
+        case "bmp": "image/bmp"
+        case "tiff", "tif": "image/tiff"
+        case "pdf": "application/pdf"
+        case "txt", "log": "text/plain"
+        case "csv": "text/csv"
+        case "json": "application/json"
+        case "xml": "application/xml"
+        case "html", "htm": "text/html"
+        case "zip": "application/zip"
+        default: "application/octet-stream"
         }
     }
 }

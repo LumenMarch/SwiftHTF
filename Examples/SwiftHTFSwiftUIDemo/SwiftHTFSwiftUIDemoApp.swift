@@ -1,6 +1,6 @@
-import SwiftUI
 import SwiftHTF
 import SwiftHTFUI
+import SwiftUI
 
 @main
 struct SwiftHTFSwiftUIDemoApp: App {

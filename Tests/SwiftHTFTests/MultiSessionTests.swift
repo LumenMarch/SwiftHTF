@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class MultiSessionTests: XCTestCase {
-
     /// 简单 plug：每次 setup 计数
     actor SetupCounter {
         static let shared = SetupCounter()
@@ -10,17 +9,24 @@ final class MultiSessionTests: XCTestCase {
         var tearDownCount = 0
         var maxConcurrent = 0
         var currentLive = 0
-        func reset() { setupCount = 0; tearDownCount = 0; maxConcurrent = 0; currentLive = 0 }
+        func reset() {
+            setupCount = 0; tearDownCount = 0; maxConcurrent = 0; currentLive = 0
+        }
+
         func didSetup() {
             setupCount += 1
             currentLive += 1
             if currentLive > maxConcurrent { maxConcurrent = currentLive }
         }
+
         func didTearDown() {
             tearDownCount += 1
             currentLive -= 1
         }
-        func snapshot() -> (Int, Int, Int) { (setupCount, tearDownCount, maxConcurrent) }
+
+        func snapshot() -> (Int, Int, Int) {
+            (setupCount, tearDownCount, maxConcurrent)
+        }
     }
 
     final class CountingPlug: PlugProtocol, @unchecked Sendable {
@@ -28,6 +34,7 @@ final class MultiSessionTests: XCTestCase {
         func setup() async throws {
             await SetupCounter.shared.didSetup()
         }
+
         func tearDown() async {
             await SetupCounter.shared.didTearDown()
         }
@@ -37,7 +44,7 @@ final class MultiSessionTests: XCTestCase {
         await SetupCounter.shared.reset()
     }
 
-    func testTwoConcurrentSessionsEachHaveOwnPlugInstance() async throws {
+    func testTwoConcurrentSessionsEachHaveOwnPlugInstance() async {
         let plan = TestPlan(name: "concurrent") {
             Phase(name: "p") { _ in
                 try await Task.sleep(nanoseconds: 50_000_000)
@@ -68,7 +75,7 @@ final class MultiSessionTests: XCTestCase {
         XCTAssertEqual(maxConc, 2, "两个 plug 实例应同时存在过")
     }
 
-    func testIndependentEventStreams() async throws {
+    func testIndependentEventStreams() async {
         let plan = TestPlan(name: "events") {
             Phase(name: "x") { _ in .continue }
         }
@@ -80,10 +87,10 @@ final class MultiSessionTests: XCTestCase {
         var sn1: String?
         var sn2: String?
         for await event in await session1.events() {
-            if case .testStarted(_, let sn) = event { sn1 = sn }
+            if case let .testStarted(_, sn) = event { sn1 = sn }
         }
         for await event in await session2.events() {
-            if case .testStarted(_, let sn) = event { sn2 = sn }
+            if case let .testStarted(_, sn) = event { sn2 = sn }
         }
 
         _ = await session1.record()
@@ -132,14 +139,19 @@ final class MultiSessionTests: XCTestCase {
 
         actor Collector {
             var sns: Set<String> = []
-            func add(_ s: String?) { if let s { sns.insert(s) } }
-            func snapshot() -> Set<String> { sns }
+            func add(_ s: String?) {
+                if let s { sns.insert(s) }
+            }
+
+            func snapshot() -> Set<String> {
+                sns
+            }
         }
         let c = Collector()
 
         let listener = Task {
             for await event in await executor.events() {
-                if case .testStarted(_, let sn) = event { await c.add(sn) }
+                if case let .testStarted(_, sn) = event { await c.add(sn) }
             }
         }
 

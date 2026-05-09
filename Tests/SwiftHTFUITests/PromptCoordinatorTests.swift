@@ -1,10 +1,9 @@
-import XCTest
-@testable import SwiftHTFUI
 import SwiftHTF
+@testable import SwiftHTFUI
+import XCTest
 
 @MainActor
 final class PromptCoordinatorTests: XCTestCase {
-
     func testCurrentPopulatedWhenPlugRequests() async throws {
         let plug = PromptPlug()
         let coord = PromptCoordinator()
@@ -17,14 +16,14 @@ final class PromptCoordinatorTests: XCTestCase {
 
         try await waitUntil { coord.current != nil }
         XCTAssertNotNil(coord.current)
-        if case .confirm(let msg) = coord.current?.kind {
+        if case let .confirm(msg) = coord.current?.kind {
             XCTAssertEqual(msg, "ready?")
         } else {
             XCTFail("expected .confirm")
         }
 
         // 应答
-        let id = coord.current!.id
+        let id = try XCTUnwrap(coord.current?.id)
         coord.resolve(id, response: .confirm(true))
 
         let answer = await answerTask.value
@@ -44,7 +43,7 @@ final class PromptCoordinatorTests: XCTestCase {
         }
 
         try await waitUntil { coord.current != nil }
-        let id = coord.current!.id
+        let id = try XCTUnwrap(coord.current?.id)
         coord.cancel(id)
 
         let answer = await answerTask.value

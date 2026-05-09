@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class DiagnosticsTests: XCTestCase {
-
     // MARK: - 触发时机
 
     func testDiagnoserRunsOnFail() async {
@@ -12,7 +11,7 @@ final class DiagnosticsTests: XCTestCase {
                 diagnosers: [
                     ClosureDiagnoser("d1") { _, _ in
                         [Diagnosis(code: "E_BAD", message: "explicit fail")]
-                    }
+                    },
                 ]
             ) { _ in .failAndContinue }
         }
@@ -30,7 +29,7 @@ final class DiagnosticsTests: XCTestCase {
                 diagnosers: [
                     ClosureDiagnoser("d1") { record, _ in
                         [Diagnosis(code: "E_THROW", message: record.errorMessage ?? "?")]
-                    }
+                    },
                 ]
             ) { _ in throw E() }
         }
@@ -41,7 +40,11 @@ final class DiagnosticsTests: XCTestCase {
     }
 
     func testDiagnoserSkippedOnPass() async {
-        actor Counter { var hit = 0; func inc() { hit += 1 }; func value() -> Int { hit } }
+        actor Counter { var hit = 0; func inc() {
+            hit += 1
+        }; func value() -> Int {
+            hit
+        } }
         let counter = Counter()
         let plan = TestPlan(name: "pass_diag") {
             Phase(
@@ -50,7 +53,7 @@ final class DiagnosticsTests: XCTestCase {
                     ClosureDiagnoser("d1") { _, _ in
                         await counter.inc()
                         return [Diagnosis(code: "X", message: "x")]
-                    }
+                    },
                 ]
             ) { _ in .continue }
         }
@@ -62,7 +65,11 @@ final class DiagnosticsTests: XCTestCase {
     }
 
     func testDiagnoserSkippedOnSkip() async {
-        actor Counter { var hit = 0; func inc() { hit += 1 }; func value() -> Int { hit } }
+        actor Counter { var hit = 0; func inc() {
+            hit += 1
+        }; func value() -> Int {
+            hit
+        } }
         let counter = Counter()
         let plan = TestPlan(name: "skip_diag") {
             Phase(
@@ -72,7 +79,7 @@ final class DiagnosticsTests: XCTestCase {
                     ClosureDiagnoser("d1") { _, _ in
                         await counter.inc()
                         return [Diagnosis(code: "X", message: "x")]
-                    }
+                    },
                 ]
             ) { _ in .continue }
         }
@@ -90,7 +97,7 @@ final class DiagnosticsTests: XCTestCase {
                 diagnosers: [
                     ClosureDiagnoser("a") { _, _ in [Diagnosis(code: "A", message: "a")] },
                     ClosureDiagnoser("b") { _, _ in [Diagnosis(code: "B", message: "b")] },
-                    ClosureDiagnoser("c") { _, _ in [Diagnosis(code: "C", message: "c")] }
+                    ClosureDiagnoser("c") { _, _ in [Diagnosis(code: "C", message: "c")] },
                 ]
             ) { _ in .failAndContinue }
         }
@@ -115,9 +122,9 @@ final class DiagnosticsTests: XCTestCase {
                                 severity: .warning,
                                 message: "trace dumped",
                                 details: ["phase": .string(record.name)]
-                            )
+                            ),
                         ]
-                    }
+                    },
                 ]
             ) { _ in .failAndContinue }
         }
@@ -133,9 +140,17 @@ final class DiagnosticsTests: XCTestCase {
 
     func testDiagnoserRunsAfterMeasurementRepeatExhaustion() async {
         actor Counter { var attempts = 0; var diagHits = 0
-            func incAtt() { attempts += 1 }
-            func incDiag() { diagHits += 1 }
-            func snapshot() -> (Int, Int) { (attempts, diagHits) }
+            func incAtt() {
+                attempts += 1
+            }
+
+            func incDiag() {
+                diagHits += 1
+            }
+
+            func snapshot() -> (Int, Int) {
+                (attempts, diagHits)
+            }
         }
         let counter = Counter()
         let plan = TestPlan(name: "repeat_then_diag", continueOnFail: true) {
@@ -147,7 +162,7 @@ final class DiagnosticsTests: XCTestCase {
                     ClosureDiagnoser("d") { _, _ in
                         await counter.incDiag()
                         return [Diagnosis(code: "VCC_OOR", message: "out of range")]
-                    }
+                    },
                 ]
             ) { @MainActor ctx in
                 await counter.incAtt()
@@ -170,13 +185,15 @@ final class DiagnosticsTests: XCTestCase {
                 name: "bad",
                 diagnosers: [
                     ClosureDiagnoser("x") { _, _ in
-                        [Diagnosis(
-                            code: "E1",
-                            severity: .critical,
-                            message: "boom",
-                            details: ["k": .int(7)]
-                        )]
-                    }
+                        [
+                            Diagnosis(
+                                code: "E1",
+                                severity: .critical,
+                                message: "boom",
+                                details: ["k": .int(7)]
+                            ),
+                        ]
+                    },
                 ]
             ) { _ in .failAndContinue }
         }

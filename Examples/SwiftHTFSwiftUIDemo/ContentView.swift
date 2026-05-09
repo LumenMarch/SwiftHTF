@@ -1,6 +1,6 @@
-import SwiftUI
 import SwiftHTF
 import SwiftHTFUI
+import SwiftUI
 
 struct ContentView: View {
     @StateObject private var model = DemoModel()
@@ -88,7 +88,7 @@ private struct RunnerScene: View {
     private var logView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(runner.logLines.enumerated()), id: \.offset) { (_, line) in
+                ForEach(Array(runner.logLines.enumerated()), id: \.offset) { _, line in
                     Text(line)
                         .font(.system(.caption, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,11 +112,12 @@ private struct OutcomeBadge: View {
             .foregroundColor(color)
             .cornerRadius(6)
     }
+
     private var color: Color {
         switch outcome {
-        case .pass: return .green
-        case .marginalPass: return .yellow
-        case .fail, .error, .timeout, .aborted: return .red
+        case .pass: .green
+        case .marginalPass: .yellow
+        case .fail, .error, .timeout, .aborted: .red
         }
     }
 }
@@ -146,7 +147,7 @@ private struct PhaseRow: View {
             ForEach(phase.traces.sorted(by: { $0.key < $1.key }), id: \.key) { entry in
                 TraceRow(name: entry.key, trace: entry.value)
             }
-            ForEach(Array(phase.attachments.enumerated()), id: \.offset) { (_, a) in
+            ForEach(Array(phase.attachments.enumerated()), id: \.offset) { _, a in
                 AttachmentRow(attachment: a)
             }
             ForEach(phase.diagnoses) { d in
@@ -162,19 +163,20 @@ private struct PhaseRow: View {
 
     private var symbol: String {
         switch phase.outcome {
-        case .pass: return "✓"
-        case .marginalPass: return "≈"
-        case .fail: return "✗"
-        case .skip: return "⏭"
-        case .error: return "⚠"
+        case .pass: "✓"
+        case .marginalPass: "≈"
+        case .fail: "✗"
+        case .skip: "⏭"
+        case .error: "⚠"
         }
     }
+
     private var color: Color {
         switch phase.outcome {
-        case .pass: return .green
-        case .marginalPass: return .yellow
-        case .fail, .error: return .red
-        case .skip: return .gray
+        case .pass: .green
+        case .marginalPass: .yellow
+        case .fail, .error: .red
+        case .skip: .gray
         }
     }
 }
@@ -195,10 +197,10 @@ private struct DiagnosisRow: View {
 
     private var severityColor: Color {
         switch diagnosis.severity {
-        case .info: return .blue
-        case .warning: return .orange
-        case .error: return .red
-        case .critical: return .purple
+        case .info: .blue
+        case .warning: .orange
+        case .error: .red
+        case .critical: .purple
         }
     }
 }
@@ -259,10 +261,10 @@ private struct TraceRow: View {
 
     private var color: Color {
         switch trace.outcome {
-        case .pass: return .green
-        case .marginalPass: return .yellow
-        case .skip: return .gray
-        case .fail, .error: return .red
+        case .pass: .green
+        case .marginalPass: .yellow
+        case .skip: .gray
+        case .fail, .error: .red
         }
     }
 }
@@ -291,18 +293,19 @@ private struct MeasurementRow: View {
 
     private var symbol: String {
         switch measurement.outcome {
-        case .pass: return "✓"
-        case .marginalPass: return "≈"
-        case .skip: return "⏭"
-        case .fail, .error: return "✗"
+        case .pass: "✓"
+        case .marginalPass: "≈"
+        case .skip: "⏭"
+        case .fail, .error: "✗"
         }
     }
+
     private var color: Color {
         switch measurement.outcome {
-        case .pass: return .green
-        case .marginalPass: return .yellow
-        case .skip: return .gray
-        case .fail, .error: return .red
+        case .pass: .green
+        case .marginalPass: .yellow
+        case .skip: .gray
+        case .fail, .error: .red
         }
     }
 }
@@ -321,10 +324,10 @@ final class DemoModel: ObservableObject {
         let plug = PromptPlug()
         let plan = makeDemoPlan()
         let exec = TestExecutor(plan: plan, outputCallbacks: [ConsoleOutput()])
-        self.executor = exec
-        self.promptPlug = plug
-        self.runner = TestRunnerViewModel(executor: exec)
-        self.prompts = PromptCoordinator()
+        executor = exec
+        promptPlug = plug
+        runner = TestRunnerViewModel(executor: exec)
+        prompts = PromptCoordinator()
     }
 
     func boot() async {

@@ -8,11 +8,15 @@ actor MockPowerSupply: PlugProtocol {
         voltage = volts
         try? await Task.sleep(nanoseconds: 50_000_000)
     }
+
     func readVoltage() async -> Double {
-        voltage + Double.random(in: -0.05...0.05)
+        voltage + Double.random(in: -0.05 ... 0.05)
     }
+
     func setup() async throws {}
-    func tearDown() async { voltage = 0 }
+    func tearDown() async {
+        voltage = 0
+    }
 }
 
 @MainActor
@@ -24,7 +28,7 @@ func makeDemoPlan() -> TestPlan {
                 let psu = ctx.getPlug(MockPowerSupply.self)
                 await psu.setOutput(0)
                 return .continue
-            }
+            },
         ]
     ) {
         Phase(name: "OperatorReady") { @MainActor ctx in
@@ -53,7 +57,7 @@ func makeDemoPlan() -> TestPlan {
                 measurements: [
                     .named("vcc", unit: "V", description: "主电源")
                         .inRange(3.0, 3.6)
-                        .withinPercent(of: 3.3, percent: 10)
+                        .withinPercent(of: 3.3, percent: 10),
                 ]
             ) { @MainActor ctx in
                 let psu = ctx.getPlug(MockPowerSupply.self)
@@ -84,7 +88,7 @@ func makeDemoPlan() -> TestPlan {
                             if err > 0.2 { return .fail("err=\(err)V") }
                             if err > 0.1 { return .marginal("err=\(err)V") }
                             return .pass
-                        }
+                        },
                 ]
             ) { @MainActor ctx in
                 let psu = ctx.getPlug(MockPowerSupply.self)

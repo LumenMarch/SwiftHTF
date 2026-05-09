@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class HistoryStoreTests: XCTestCase {
-
     // MARK: - 帮手
 
     private func makeRecord(
@@ -63,7 +62,7 @@ final class HistoryStoreTests: XCTestCase {
 
     func testInMemoryLimit() async throws {
         let store = InMemoryHistoryStore()
-        for _ in 0..<5 {
+        for _ in 0 ..< 5 {
             try await store.save(makeRecord())
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
@@ -74,7 +73,7 @@ final class HistoryStoreTests: XCTestCase {
     func testInMemorySortDescending() async throws {
         let store = InMemoryHistoryStore()
         var records: [TestRecord] = []
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             let r = makeRecord()
             records.append(r)
             try await store.save(r)
@@ -89,9 +88,8 @@ final class HistoryStoreTests: XCTestCase {
     // MARK: - JSONFileHistoryStore
 
     private func makeTempDir() -> URL {
-        let url = FileManager.default.temporaryDirectory
+        FileManager.default.temporaryDirectory
             .appendingPathComponent("SwiftHTF-history-test-" + UUID().uuidString)
-        return url
     }
 
     func testJSONFileRoundTrip() async throws {

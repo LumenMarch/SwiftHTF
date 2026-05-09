@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class SeriesMeasurementTests: XCTestCase {
-
     // MARK: - 数据模型 / JSON 往返
 
     func testSeriesMeasurementJSONRoundTrip() throws {
@@ -43,7 +42,7 @@ final class SeriesMeasurementTests: XCTestCase {
 
     // MARK: - 端到端 phase 集成
 
-    func testRecordSeriesAndHarvestPasses() async throws {
+    func testRecordSeriesAndHarvestPasses() async {
         let plan = TestPlan(name: "iv-pass") {
             Phase(
                 name: "sweep",
@@ -51,7 +50,7 @@ final class SeriesMeasurementTests: XCTestCase {
                     .named("iv")
                         .dimension("V", unit: "V")
                         .value("I", unit: "A")
-                        .lengthAtLeast(3)
+                        .lengthAtLeast(3),
                 ]
             ) { @MainActor ctx in
                 await ctx.recordSeries("iv") { rec in
@@ -76,7 +75,7 @@ final class SeriesMeasurementTests: XCTestCase {
         XCTAssertEqual(trace?.outcome, .pass)
     }
 
-    func testEachValidatorFailsPhase() async throws {
+    func testEachValidatorFailsPhase() async {
         let plan = TestPlan(name: "iv-overcurrent") {
             Phase(
                 name: "sweep",
@@ -87,13 +86,13 @@ final class SeriesMeasurementTests: XCTestCase {
                         .each { sample in
                             let i = sample[1].asDouble ?? 0
                             return i < 0.1 ? .pass : .fail("over current \(i)")
-                        }
+                        },
                 ]
             ) { @MainActor ctx in
                 await ctx.recordSeries("iv") { rec in
                     rec.append(0.0, 0.001)
                     rec.append(1.0, 0.05)
-                    rec.append(2.0, 0.5)  // 触发 fail
+                    rec.append(2.0, 0.5) // 触发 fail
                 }
                 return .continue
             }
@@ -110,7 +109,7 @@ final class SeriesMeasurementTests: XCTestCase {
         )
     }
 
-    func testEachValidatorMarginalPropagatesToPhase() async throws {
+    func testEachValidatorMarginalPropagatesToPhase() async {
         let plan = TestPlan(name: "iv-marginal") {
             Phase(
                 name: "sweep",
@@ -124,12 +123,12 @@ final class SeriesMeasurementTests: XCTestCase {
                                 return .marginal("接近上限")
                             }
                             return .pass
-                        }
+                        },
                 ]
             ) { @MainActor ctx in
                 await ctx.recordSeries("iv") { rec in
                     rec.append(0.0, 0.001)
-                    rec.append(1.0, 0.045)  // 触发 marginal
+                    rec.append(1.0, 0.045) // 触发 marginal
                 }
                 return .continue
             }
@@ -141,7 +140,7 @@ final class SeriesMeasurementTests: XCTestCase {
         XCTAssertEqual(record.phases.first?.traces["iv"]?.outcome, .marginalPass)
     }
 
-    func testLengthAtLeastFails() async throws {
+    func testLengthAtLeastFails() async {
         let plan = TestPlan(name: "too-short") {
             Phase(
                 name: "sweep",
@@ -149,7 +148,7 @@ final class SeriesMeasurementTests: XCTestCase {
                     .named("iv")
                         .dimension("V", unit: "V")
                         .value("I", unit: "A")
-                        .lengthAtLeast(5)
+                        .lengthAtLeast(5),
                 ]
             ) { @MainActor ctx in
                 await ctx.recordSeries("iv") { rec in
@@ -166,8 +165,10 @@ final class SeriesMeasurementTests: XCTestCase {
         XCTAssertEqual(trace?.outcome, .fail)
     }
 
-    func testRepeatOnMeasurementFailRetriggersForSeries() async throws {
-        actor Counter { var n = 0; func incr() -> Int { n += 1; return n } }
+    func testRepeatOnMeasurementFailRetriggersForSeries() async {
+        actor Counter { var n = 0; func incr() -> Int {
+            n += 1; return n
+        } }
         let counter = Counter()
         let plan = TestPlan(name: "retry-series") {
             Phase(
@@ -176,7 +177,7 @@ final class SeriesMeasurementTests: XCTestCase {
                     .named("iv")
                         .dimension("V", unit: "V")
                         .value("I", unit: "A")
-                        .lengthAtLeast(2)
+                        .lengthAtLeast(2),
                 ],
                 repeatOnMeasurementFail: 2
             ) { @MainActor ctx in
@@ -184,7 +185,7 @@ final class SeriesMeasurementTests: XCTestCase {
                 await ctx.recordSeries("iv") { rec in
                     rec.append(0.0, 0.001)
                     if attempt >= 2 {
-                        rec.append(1.0, 0.002)  // 第二次起够长
+                        rec.append(1.0, 0.002) // 第二次起够长
                     }
                 }
                 return .continue
@@ -197,7 +198,7 @@ final class SeriesMeasurementTests: XCTestCase {
         XCTAssertEqual(n, 2, "应有 1 次重跑")
     }
 
-    func testExplicitDimensionsOverrideSpec() async throws {
+    func testExplicitDimensionsOverrideSpec() async {
         // recordSeries 显式传维度时应优先于 spec
         let plan = TestPlan(name: "override") {
             Phase(
@@ -205,7 +206,7 @@ final class SeriesMeasurementTests: XCTestCase {
                 series: [
                     .named("iv")
                         .dimension("V", unit: "V")
-                        .value("I", unit: "A")
+                        .value("I", unit: "A"),
                 ]
             ) { @MainActor ctx in
                 await ctx.recordSeries(
@@ -225,7 +226,7 @@ final class SeriesMeasurementTests: XCTestCase {
         XCTAssertEqual(trace?.value.name, "Gain")
     }
 
-    func testNoSpecMatchTraceStillRecorded() async throws {
+    func testNoSpecMatchTraceStillRecorded() async {
         // recordSeries 用了 spec 不存在的名字：仍然写入 record，但不跑 validator
         let plan = TestPlan(name: "no-spec") {
             Phase(name: "sweep") { @MainActor ctx in
@@ -248,7 +249,7 @@ final class SeriesMeasurementTests: XCTestCase {
         XCTAssertTrue(trace?.validatorMessages.isEmpty ?? false)
     }
 
-    func testCustomSeriesValidator() async throws {
+    func testCustomSeriesValidator() async {
         // 自定义全量校验：要求采样按 V 单调递增
         let plan = TestPlan(name: "monotonic") {
             Phase(
@@ -267,13 +268,13 @@ final class SeriesMeasurementTests: XCTestCase {
                                 prev = v
                             }
                             return .pass
-                        }
+                        },
                 ]
             ) { @MainActor ctx in
                 await ctx.recordSeries("iv") { rec in
                     rec.append(0.0, 0.001)
                     rec.append(2.0, 0.020)
-                    rec.append(1.0, 0.010)  // 不单调
+                    rec.append(1.0, 0.010) // 不单调
                 }
                 return .continue
             }

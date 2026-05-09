@@ -1,5 +1,5 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class AnyCodableValueTests: XCTestCase {
     func testRoundTripBool() throws {
@@ -80,7 +80,7 @@ final class AnyCodableValueTests: XCTestCase {
         struct Pair: Encodable { let x: Int; let y: String }
         let p = Pair(x: 1, y: "a")
         let coded = AnyCodableValue.from(p)
-        if case .object(let dict) = coded {
+        if case let .object(dict) = coded {
             XCTAssertEqual(dict["x"], .int(1))
             XCTAssertEqual(dict["y"], .string("a"))
         } else {

@@ -83,10 +83,10 @@ public struct MeasurementSpec: Sendable {
         for v in validators {
             switch v.validate(value) {
             case .pass: break
-            case .marginal(let msg):
+            case let .marginal(msg):
                 marginal = true
                 messages.append(msg)
-            case .fail(let msg):
+            case let .fail(msg):
                 failed = true
                 messages.append(msg)
             }
@@ -97,7 +97,7 @@ public struct MeasurementSpec: Sendable {
     }
 
     /// 三态 spec 判定（fail 优先级最高 → marginal → pass）
-    enum Verdict: Sendable {
+    enum Verdict {
         case pass
         case marginal
         case fail
@@ -123,7 +123,7 @@ public extension MeasurementSpec {
     }
 
     /// 等于某 Encodable 值
-    func equals<T: Encodable>(_ expected: T) -> MeasurementSpec {
+    func equals(_ expected: some Encodable) -> MeasurementSpec {
         with(EqualsValueValidator(expected: AnyCodableValue.from(expected)))
     }
 
@@ -209,7 +209,9 @@ public struct EqualsValueValidator: MeasurementValidator {
         return .fail("\(label): 实际 \(value.displayString)")
     }
 
-    public var label: String { "equals(\(expected.displayString))" }
+    public var label: String {
+        "equals(\(expected.displayString))"
+    }
 }
 
 /// 正则匹配（仅作用在 string 值）
@@ -234,7 +236,9 @@ public struct RegexMeasurementValidator: MeasurementValidator {
         return .fail("\(label): \"\(s)\" 不匹配")
     }
 
-    public var label: String { "regex(\(pattern))" }
+    public var label: String {
+        "regex(\(pattern))"
+    }
 }
 
 /// 数值在 target 的 ±percent% 容差内（percent 用百分号原值，例如 5 表示 ±5%）
@@ -256,7 +260,9 @@ public struct WithinPercentValidator: MeasurementValidator {
         return .fail("\(label): 实际 \(n) 偏离 \(target) 超过 ±\(percent)%")
     }
 
-    public var label: String { "within_percent(\(target), ±\(percent)%)" }
+    public var label: String {
+        "within_percent(\(target), ±\(percent)%)"
+    }
 }
 
 /// Marginal 范围：值落在 [lower, upper] 内为 pass，否则报 .marginal。
@@ -284,7 +290,9 @@ public struct MarginalRangeValidator: MeasurementValidator {
         return .pass
     }
 
-    public var label: String { "marginal_range[\(lower), \(upper)]" }
+    public var label: String {
+        "marginal_range[\(lower), \(upper)]"
+    }
 }
 
 /// 非空：string trim 非空 / array 非空 / object 非空 / null 视为空
@@ -295,21 +303,23 @@ public struct NotEmptyMeasurementValidator: MeasurementValidator {
         switch value {
         case .null:
             return .fail("\(label): null")
-        case .string(let s):
+        case let .string(s):
             if s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return .fail("\(label): 空字符串")
             }
             return .pass
-        case .array(let a):
+        case let .array(a):
             return a.isEmpty ? .fail("\(label): 空数组") : .pass
-        case .object(let o):
+        case let .object(o):
             return o.isEmpty ? .fail("\(label): 空对象") : .pass
         case .bool, .int, .double:
             return .pass
         }
     }
 
-    public var label: String { "not_empty" }
+    public var label: String {
+        "not_empty"
+    }
 }
 
 /// 自定义闭包

@@ -1,10 +1,9 @@
-import XCTest
-@testable import SwiftHTFUI
 import SwiftHTF
+@testable import SwiftHTFUI
+import XCTest
 
 @MainActor
 final class TestRunnerViewModelTests: XCTestCase {
-
     func testStartCollectsPhasesAndOutcome() async throws {
         let plan = TestPlan(name: "ui_simple") {
             Phase(name: "a") { _ in .continue }

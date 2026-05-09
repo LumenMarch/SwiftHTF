@@ -123,10 +123,10 @@ public actor JSONFileHistoryStore: HistoryStore {
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .secondsSince1970
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        self.encoder = enc
+        encoder = enc
         let dec = JSONDecoder()
         dec.dateDecodingStrategy = .secondsSince1970
-        self.decoder = dec
+        decoder = dec
     }
 
     public func save(_ record: TestRecord) async throws {
@@ -136,7 +136,7 @@ public actor JSONFileHistoryStore: HistoryStore {
     }
 
     public func load(id: UUID) async throws -> TestRecord? {
-        let url = self.url(for: id)
+        let url = url(for: id)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
         return try decoder.decode(TestRecord.self, from: data)
@@ -159,7 +159,7 @@ public actor JSONFileHistoryStore: HistoryStore {
     }
 
     public func delete(id: UUID) async throws {
-        let url = self.url(for: id)
+        let url = url(for: id)
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }

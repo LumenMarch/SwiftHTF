@@ -19,10 +19,10 @@ private func formatBytes(_ n: Int) -> String {
 
 private func phaseSymbol(_ o: PhaseOutcomeType) -> String {
     switch o {
-    case .pass: return "✓"
-    case .marginalPass: return "≈"
-    case .skip: return "⏭"
-    case .fail, .error: return "✗"
+    case .pass: "✓"
+    case .marginalPass: "≈"
+    case .skip: "⏭"
+    case .fail, .error: "✗"
     }
 }
 
@@ -120,7 +120,7 @@ public struct CSVOutput: OutputCallback {
                 at: directory,
                 withIntermediateDirectories: true
             )
-            var lines: [String] = ["name,outcome,duration_s,measurements_count,traces_count,attachments_count,diagnoses_count,error"]
+            var lines = ["name,outcome,duration_s,measurements_count,traces_count,attachments_count,diagnoses_count,error"]
             for p in record.phases {
                 lines.append([
                     Self.escape(p.name),
@@ -130,7 +130,7 @@ public struct CSVOutput: OutputCallback {
                     String(p.traces.count),
                     String(p.attachments.count),
                     String(p.diagnoses.count),
-                    Self.escape(p.errorMessage ?? "")
+                    Self.escape(p.errorMessage ?? ""),
                 ].joined(separator: ","))
             }
             let url = directory.appendingPathComponent(

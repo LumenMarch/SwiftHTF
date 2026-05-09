@@ -9,10 +9,10 @@ public enum LogLevel: String, Sendable, Codable, Comparable {
 
     private var ordinal: Int {
         switch self {
-        case .debug: return 0
-        case .info: return 1
-        case .warning: return 2
-        case .error: return 3
+        case .debug: 0
+        case .info: 1
+        case .warning: 2
+        case .error: 3
         }
     }
 

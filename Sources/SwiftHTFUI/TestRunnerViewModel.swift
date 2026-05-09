@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import SwiftHTF
 
 /// 把 `TestExecutor.events()` 的 `AsyncStream` 转成 SwiftUI 友好的 `@Published` 状态。
@@ -53,16 +53,16 @@ public final class TestRunnerViewModel: ObservableObject {
                 for await event in stream {
                     guard let self else { return }
                     switch event {
-                    case .testStarted(let name, let sn):
-                        self.planName = name
+                    case let .testStarted(name, sn):
+                        planName = name
                         self.serialNumber = sn
-                    case .phaseCompleted(let r):
-                        self.phases.append(r)
-                    case .log(let msg):
-                        self.appendLog(msg)
-                    case .testCompleted(let r):
-                        self.outcome = r.outcome
-                        self.record = r
+                    case let .phaseCompleted(r):
+                        phases.append(r)
+                    case let .log(msg):
+                        appendLog(msg)
+                    case let .testCompleted(r):
+                        outcome = r.outcome
+                        record = r
                         self.serialNumber = r.serialNumber
                         return
                     }

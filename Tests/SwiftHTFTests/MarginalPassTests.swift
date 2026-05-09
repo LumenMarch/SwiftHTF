@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class MarginalPassTests: XCTestCase {
-
     // MARK: - MarginalRangeValidator 单元
 
     func testMarginalRangeInside() {
@@ -60,7 +59,7 @@ final class MarginalPassTests: XCTestCase {
                 measurements: [
                     .named("vcc", unit: "V")
                         .inRange(3.0, 3.6)
-                        .marginalRange(3.1, 3.5)
+                        .marginalRange(3.1, 3.5),
                 ]
             ) { @MainActor ctx in
                 ctx.measure("vcc", 3.05, unit: "V")
@@ -80,7 +79,7 @@ final class MarginalPassTests: XCTestCase {
                 measurements: [
                     .named("vcc", unit: "V")
                         .inRange(3.0, 3.6)
-                        .marginalRange(3.1, 3.5)
+                        .marginalRange(3.1, 3.5),
                 ]
             ) { @MainActor ctx in
                 ctx.measure("vcc", 3.05, unit: "V")
@@ -118,7 +117,7 @@ final class MarginalPassTests: XCTestCase {
             Phase(
                 name: "vcc",
                 measurements: [
-                    .named("vcc").inRange(3.0, 3.6).marginalRange(3.1, 3.5)
+                    .named("vcc").inRange(3.0, 3.6).marginalRange(3.1, 3.5),
                 ]
             ) { @MainActor ctx in
                 ctx.measure("vcc", 3.3)

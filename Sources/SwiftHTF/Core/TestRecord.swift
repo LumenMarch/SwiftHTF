@@ -25,14 +25,14 @@ public struct TestRecord: Sendable, Codable, Identifiable {
     public var metadata: [String: String]
 
     public init(planName: String, serialNumber: String?) {
-        self.id = UUID()
+        id = UUID()
         self.planName = planName
         self.serialNumber = serialNumber
-        self.startTime = Date()
-        self.endTime = nil
-        self.outcome = .pass
-        self.phases = []
-        self.metadata = [:]
+        startTime = Date()
+        endTime = nil
+        outcome = .pass
+        phases = []
+        metadata = [:]
     }
 
     /// 测试持续时间

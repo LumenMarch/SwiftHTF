@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class MeasurementValidatorTests: XCTestCase {
-
     // MARK: - 内置 validator 单元
 
     func testInRangeInclusive() {
@@ -94,7 +93,7 @@ final class MeasurementValidatorTests: XCTestCase {
             Phase(
                 name: "vcc",
                 measurements: [
-                    .named("vcc", unit: "V").inRange(3.0, 3.6)
+                    .named("vcc", unit: "V").inRange(3.0, 3.6),
                 ]
             ) { @MainActor ctx in
                 ctx.measure("vcc", 3.32, unit: "V")
@@ -114,7 +113,7 @@ final class MeasurementValidatorTests: XCTestCase {
             Phase(
                 name: "vcc",
                 measurements: [
-                    .named("vcc", unit: "V").inRange(3.0, 3.6)
+                    .named("vcc", unit: "V").inRange(3.0, 3.6),
                 ]
             ) { @MainActor ctx in
                 ctx.measure("vcc", 5.0, unit: "V")

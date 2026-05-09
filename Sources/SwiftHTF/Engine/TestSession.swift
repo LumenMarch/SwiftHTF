@@ -5,7 +5,7 @@ import Foundation
 /// session 持有自己的 plug 实例（每 session 独立 setup / tearDown）、自己的事件流、
 /// 自己的取消句柄。`record()` 等待 session 完成；`events()` 订阅细粒度事件。
 public actor TestSession {
-    public nonisolated let id: UUID = UUID()
+    public nonisolated let id: UUID = .init()
     private let plan: TestPlan
     private let config: TestConfig
     private let plugManager: PlugManager
@@ -31,7 +31,7 @@ public actor TestSession {
         self.config = config
         self.plugManager = plugManager
         self.outputCallbacks = outputCallbacks
-        self.initialSerialNumber = serialNumber
+        initialSerialNumber = serialNumber
     }
 
     // MARK: - 公开 API
@@ -47,7 +47,9 @@ public actor TestSession {
         var continuation: AsyncStream<TestEvent>.Continuation!
         let stream = AsyncStream<TestEvent> { c in continuation = c }
         // 先补发历史
-        for e in emittedEvents { continuation.yield(e) }
+        for e in emittedEvents {
+            continuation.yield(e)
+        }
         if streamFinished {
             continuation.finish()
             return stream
@@ -69,7 +71,7 @@ public actor TestSession {
             guard let self else {
                 return TestRecord(planName: "", serialNumber: nil)
             }
-            return await self.runInternal()
+            return await runInternal()
         }
     }
 
@@ -96,12 +98,16 @@ public actor TestSession {
 
     private func emit(_ event: TestEvent) {
         emittedEvents.append(event)
-        for c in continuations.values { c.yield(event) }
+        for c in continuations.values {
+            c.yield(event)
+        }
     }
 
     private func finishStreams() {
         streamFinished = true
-        for c in continuations.values { c.finish() }
+        for c in continuations.values {
+            c.finish()
+        }
         continuations.removeAll()
     }
 
@@ -169,13 +175,13 @@ public actor TestSession {
             )
         }
 
-        if record.outcome == .pass
-            && record.phases.contains(where: { $0.outcome == .marginalPass })
+        if record.outcome == .pass,
+           record.phases.contains(where: { $0.outcome == .marginalPass })
         {
             record.outcome = .marginalPass
         }
 
-        if Task.isCancelled && record.outcome != .fail {
+        if Task.isCancelled, record.outcome != .fail {
             record.outcome = .aborted
         }
 
@@ -209,7 +215,7 @@ public actor TestSession {
         for node in nodes {
             if Task.isCancelled { outcome.aborted = true; return outcome }
             switch node {
-            case .phase(let phase):
+            case let .phase(phase):
                 if let runIf = phase.runIf {
                     let proceed = await runIf(context)
                     if !proceed {
@@ -231,7 +237,7 @@ public actor TestSession {
                     outcome.failed = true
                     if !continueOnFail { return outcome }
                 }
-            case .group(let g):
+            case let .group(g):
                 let nested = await runGroup(g, parentPath: groupPath, into: &record, context: context)
                 if nested.failed {
                     outcome.failed = true

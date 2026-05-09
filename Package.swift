@@ -4,35 +4,37 @@ import PackageDescription
 let package = Package(
     name: "SwiftHTF",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v12),
     ],
     products: [
         .library(name: "SwiftHTF", targets: ["SwiftHTF"]),
         .library(name: "SwiftHTFUI", targets: ["SwiftHTFUI"]),
         .executable(name: "SwiftHTFDemo", targets: ["SwiftHTFDemo"]),
-        .executable(name: "SwiftHTFSwiftUIDemo", targets: ["SwiftHTFSwiftUIDemo"])
+        .executable(name: "SwiftHTFSwiftUIDemo", targets: ["SwiftHTFSwiftUIDemo"]),
     ],
     targets: [
         .target(
             name: "SwiftHTF",
             swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
+                .enableExperimentalFeature("StrictConcurrency"),
             ]
         ),
         .target(
             name: "SwiftHTFUI",
             dependencies: ["SwiftHTF"],
             swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
+                .enableExperimentalFeature("StrictConcurrency"),
             ]
         ),
         .executableTarget(
             name: "SwiftHTFDemo",
-            dependencies: ["SwiftHTF"]
+            dependencies: ["SwiftHTF"],
+            path: "Examples/SwiftHTFDemo"
         ),
         .executableTarget(
             name: "SwiftHTFSwiftUIDemo",
-            dependencies: ["SwiftHTF", "SwiftHTFUI"]
+            dependencies: ["SwiftHTF", "SwiftHTFUI"],
+            path: "Examples/SwiftHTFSwiftUIDemo"
         ),
         .testTarget(
             name: "SwiftHTFTests",
@@ -41,6 +43,6 @@ let package = Package(
         .testTarget(
             name: "SwiftHTFUITests",
             dependencies: ["SwiftHTFUI"]
-        )
+        ),
     ]
 )

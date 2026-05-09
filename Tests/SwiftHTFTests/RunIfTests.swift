@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class RunIfTests: XCTestCase {
-
     // MARK: - Phase runIf
 
     func testPhaseRunIfFalseSkipsAndKeepsPass() async {
@@ -51,7 +50,11 @@ final class RunIfTests: XCTestCase {
     func testPhaseRunIfReadsPriorPhaseDecision() async {
         // 跨 phase 的决定通过外部 actor 传递（ctx.measurements 在 harvest 后清空，
         // 不能跨 phase 读取；要持久化跨 phase 数据，用 actor / plug / config）
-        actor Mode { var value: String?; func set(_ v: String) { value = v }; func get() -> String? { value } }
+        actor Mode { var value: String?; func set(_ v: String) {
+            value = v
+        }; func get() -> String? {
+            value
+        } }
         let mode = Mode()
         let plan = TestPlan(name: "from_prior") {
             Phase(name: "decide") { @MainActor _ in
@@ -137,7 +140,11 @@ final class RunIfTests: XCTestCase {
 
     func testGroupRunIfSeesParentScope() async {
         // group runIf 闭包通过捕获外部 actor 读到上一个 phase 的决定
-        actor Mode { var value: String?; func set(_ v: String) { value = v }; func get() -> String? { value } }
+        actor Mode { var value: String?; func set(_ v: String) {
+            value = v
+        }; func get() -> String? {
+            value
+        } }
         let mode = Mode()
         let plan = TestPlan(name: "group_predicate") {
             Phase(name: "decide") { @MainActor _ in

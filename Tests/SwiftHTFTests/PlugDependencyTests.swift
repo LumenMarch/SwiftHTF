@@ -1,75 +1,94 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 @MainActor
 final class PlugDependencyTests: XCTestCase {
-
     // MARK: - 测试用 plug
 
     /// 记录 setup 顺序到全局 actor，便于断言
     actor SetupRecorder {
         static let shared = SetupRecorder()
         var order: [String] = []
-        func record(_ name: String) { order.append(name) }
-        func snapshot() -> [String] { order }
-        func reset() { order = [] }
+        func record(_ name: String) {
+            order.append(name)
+        }
+
+        func snapshot() -> [String] {
+            order
+        }
+
+        func reset() {
+            order = []
+        }
     }
 
-    // 基础 plug
+    /// 基础 plug
     final class CorePlug: PlugProtocol, @unchecked Sendable {
         init() {}
-        func setup(resolver: PlugResolver) async throws {
+        func setup(resolver _: PlugResolver) async throws {
             await SetupRecorder.shared.record("Core")
         }
     }
 
-    // 依赖 Core
+    /// 依赖 Core
     final class MidPlug: PlugProtocol, @unchecked Sendable {
         var coreSeen: Bool = false
         init() {}
-        static var dependencies: [any PlugProtocol.Type] { [CorePlug.self] }
+        static var dependencies: [any PlugProtocol.Type] {
+            [CorePlug.self]
+        }
+
         func setup(resolver: PlugResolver) async throws {
             coreSeen = await resolver.get(CorePlug.self) != nil
             await SetupRecorder.shared.record("Mid")
         }
     }
 
-    // 同时依赖 Core 和 Mid
+    /// 同时依赖 Core 和 Mid
     final class TopPlug: PlugProtocol, @unchecked Sendable {
         var midRefSet: Bool = false
         init() {}
-        static var dependencies: [any PlugProtocol.Type] { [CorePlug.self, MidPlug.self] }
+        static var dependencies: [any PlugProtocol.Type] {
+            [CorePlug.self, MidPlug.self]
+        }
+
         func setup(resolver: PlugResolver) async throws {
             midRefSet = await resolver.get(MidPlug.self) != nil
             await SetupRecorder.shared.record("Top")
         }
     }
 
-    // 循环：A→B→A
+    /// 循环：A→B→A
     final class CycleA: PlugProtocol, @unchecked Sendable {
         init() {}
-        static var dependencies: [any PlugProtocol.Type] { [CycleB.self] }
+        static var dependencies: [any PlugProtocol.Type] {
+            [CycleB.self]
+        }
     }
 
     final class CycleB: PlugProtocol, @unchecked Sendable {
         init() {}
-        static var dependencies: [any PlugProtocol.Type] { [CycleA.self] }
+        static var dependencies: [any PlugProtocol.Type] {
+            [CycleA.self]
+        }
     }
 
-    // 缺失依赖
+    /// 缺失依赖
     final class NeedsMissing: PlugProtocol, @unchecked Sendable {
         init() {}
-        static var dependencies: [any PlugProtocol.Type] { [Missing.self] }
+        static var dependencies: [any PlugProtocol.Type] {
+            [Missing.self]
+        }
     }
 
     final class Missing: PlugProtocol, @unchecked Sendable {
         init() {}
     }
 
-    // 无依赖（旧路径）
+    /// 无依赖（旧路径）
     final class StandalonePlug: PlugProtocol, @unchecked Sendable {
         init() {}
-        func setup(resolver: PlugResolver) async throws {
+        func setup(resolver _: PlugResolver) async throws {
             await SetupRecorder.shared.record("Standalone")
         }
     }
@@ -121,7 +140,11 @@ final class PlugDependencyTests: XCTestCase {
 
     func testResolverGetsExpectedInstance() async {
         // phase 内拿 TopPlug，验证它在 setup 时确实拿到了 MidPlug 引用
-        actor MidRefBox { var v: Bool = false; func set(_ x: Bool) { v = x }; func get() -> Bool { v } }
+        actor MidRefBox { var v: Bool = false; func set(_ x: Bool) {
+            v = x
+        }; func get() -> Bool {
+            v
+        } }
         let box = MidRefBox()
         let plan = TestPlan(name: "verify_ref") {
             Phase(name: "check") { @MainActor ctx in

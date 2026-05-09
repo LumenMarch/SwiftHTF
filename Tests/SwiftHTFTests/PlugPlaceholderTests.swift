@@ -1,28 +1,40 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 /// Plug 替身（mock 注入 / 抽象别名）相关测试
 final class PlugPlaceholderTests: XCTestCase {
-
     // MARK: - 测试 Plug：用 class + required init() 支持 swap 子类继承
 
     class RealPSU: PlugProtocol, @unchecked Sendable {
         required init() {}
         var voltage: Double = 0
-        func setOutput(_ v: Double) { voltage = v }
-        func readVoltage() -> Double { voltage }
+        func setOutput(_ v: Double) {
+            voltage = v
+        }
+
+        func readVoltage() -> Double {
+            voltage
+        }
+
         func setup() async throws {}
-        func tearDown() async { voltage = 0 }
+        func tearDown() async {
+            voltage = 0
+        }
     }
 
     final class MockPSU: RealPSU, @unchecked Sendable {
         var simulated: Double = 1.5
-        override func readVoltage() -> Double { simulated }
+        override func readVoltage() -> Double {
+            simulated
+        }
     }
 
     /// 依赖 RealPSU（用于验证 swap 后 resolver 能拿到 MockPSU 实例）
     final class FollowerPlug: PlugProtocol, @unchecked Sendable {
-        static var dependencies: [any PlugProtocol.Type] { [RealPSU.self] }
+        static var dependencies: [any PlugProtocol.Type] {
+            [RealPSU.self]
+        }
+
         var observedKlass: String?
         var observedVoltage: Double?
         required init() {}
@@ -31,6 +43,7 @@ final class PlugPlaceholderTests: XCTestCase {
             observedKlass = psu.map { String(describing: type(of: $0)) }
             observedVoltage = psu?.readVoltage()
         }
+
         func tearDown() async {}
     }
 

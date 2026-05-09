@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftHTF
+import SwiftUI
 
 /// 默认 prompt sheet 视图。按 `PromptKind` 渲染不同 UI。
 ///
@@ -16,11 +16,11 @@ public struct PromptSheetView: View {
     public var body: some View {
         VStack(spacing: 0) {
             switch request.kind {
-            case .confirm(let message):
+            case let .confirm(message):
                 ConfirmContent(message: message, onResponse: onResponse)
-            case .text(let message, let placeholder):
+            case let .text(message, placeholder):
                 TextContent(message: message, placeholder: placeholder, onResponse: onResponse)
-            case .choice(let message, let options):
+            case let .choice(message, options):
                 ChoiceContent(message: message, options: options, onResponse: onResponse)
             }
         }
@@ -84,7 +84,7 @@ private struct ChoiceContent: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(message).font(.headline)
             Picker("", selection: $selected) {
-                ForEach(Array(options.enumerated()), id: \.offset) { (idx, opt) in
+                ForEach(Array(options.enumerated()), id: \.offset) { idx, opt in
                     Text(opt).tag(idx)
                 }
             }

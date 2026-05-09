@@ -10,18 +10,18 @@ public enum PhaseNode: Sendable {
     /// 节点名（phase 名 / group 名）
     public var name: String {
         switch self {
-        case .phase(let p): return p.definition.name
-        case .group(let g): return g.name
+        case let .phase(p): p.definition.name
+        case let .group(g): g.name
         }
     }
 
     public var asPhase: Phase? {
-        if case .phase(let p) = self { return p }
+        if case let .phase(p) = self { return p }
         return nil
     }
 
     public var asGroup: Group? {
-        if case .group(let g) = self { return g }
+        if case let .group(g) = self { return g }
         return nil
     }
 }

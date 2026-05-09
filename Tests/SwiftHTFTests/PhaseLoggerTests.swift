@@ -1,9 +1,8 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 /// Per-phase logger 测试
 final class PhaseLoggerTests: XCTestCase {
-
     func testCtxLogIsRecordedOnPhase() async {
         let plan = TestPlan(name: "logs") {
             Phase(name: "p") { @MainActor ctx in
@@ -34,14 +33,19 @@ final class PhaseLoggerTests: XCTestCase {
 
         actor Sink {
             var msgs: [String] = []
-            func add(_ m: String) { msgs.append(m) }
-            func snapshot() -> [String] { msgs }
+            func add(_ m: String) {
+                msgs.append(m)
+            }
+
+            func snapshot() -> [String] {
+                msgs
+            }
         }
         let sink = Sink()
 
         let listener = Task {
             for await event in await executor.events() {
-                if case .log(let m) = event { await sink.add(m) }
+                if case let .log(m) = event { await sink.add(m) }
                 if case .testCompleted = event { return }
             }
         }
@@ -73,7 +77,9 @@ final class PhaseLoggerTests: XCTestCase {
 
     func testRetryReplacesLogs() async {
         // retry：每次 attempt 起始重置 ctx.phaseLogs；最终 record.logs 仅含最后一次 attempt
-        actor Counter { var n = 0; func incr() -> Int { n += 1; return n } }
+        actor Counter { var n = 0; func incr() -> Int {
+            n += 1; return n
+        } }
         let counter = Counter()
         let plan = TestPlan(name: "retry") {
             Phase(name: "p", retryCount: 1) { @MainActor ctx in
@@ -122,7 +128,7 @@ final class PhaseLoggerTests: XCTestCase {
         let record = await executor.execute()
         let logs: [LogEntry] = record.phases.first?.logs ?? []
         XCTAssertEqual(logs.count, 2)
-        XCTAssertEqual(logs.map { $0.message }, ["phase-info", "diag-warn"])
+        XCTAssertEqual(logs.map(\.message), ["phase-info", "diag-warn"])
     }
 
     func testLogLevelOrdering() {

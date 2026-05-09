@@ -57,8 +57,12 @@ public struct SeriesMeasurement: Sendable, Codable, Equatable, Identifiable {
     }
 
     /// 维度顺序：先所有 dimensions，最后是 value。每个 sample 行长度应等于该数组长度。
-    public var columnLayout: [Dimension] { dimensions + [value] }
+    public var columnLayout: [Dimension] {
+        dimensions + [value]
+    }
 
     /// 采样数
-    public var count: Int { samples.count }
+    public var count: Int {
+        samples.count
+    }
 }

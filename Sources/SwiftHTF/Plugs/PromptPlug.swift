@@ -69,7 +69,9 @@ public final class PromptPlug: PlugProtocol {
         }
         continuations.removeAll()
         pendingRequests.removeAll()
-        for sub in subscribers.values { sub.finish() }
+        for sub in subscribers.values {
+            sub.finish()
+        }
         subscribers.removeAll()
     }
 
@@ -111,28 +113,30 @@ public final class PromptPlug: PlugProtocol {
     }
 
     /// 当前未应答的请求快照（用于诊断 / UI 重建）
-    public var pending: [PromptRequest] { pendingRequests }
+    public var pending: [PromptRequest] {
+        pendingRequests
+    }
 
     // MARK: - 高阶 API（phase 侧）
 
     /// 请求确认（是 / 否）。被取消或类型不匹配时返回 `false`。
     public func requestConfirm(_ message: String) async -> Bool {
         let response = await request(kind: .confirm(message: message))
-        if case .confirm(let b) = response { return b }
+        if case let .confirm(b) = response { return b }
         return false
     }
 
     /// 请求文本输入。被取消或类型不匹配时返回空字符串。
     public func requestText(_ message: String, placeholder: String? = nil) async -> String {
         let response = await request(kind: .text(message: message, placeholder: placeholder))
-        if case .text(let s) = response { return s }
+        if case let .text(s) = response { return s }
         return ""
     }
 
     /// 请求多选。被取消或类型不匹配时返回 `-1`。
     public func requestChoice(_ message: String, options: [String]) async -> Int {
         let response = await request(kind: .choice(message: message, options: options))
-        if case .choice(let i) = response { return i }
+        if case let .choice(i) = response { return i }
         return -1
     }
 

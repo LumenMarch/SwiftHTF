@@ -27,11 +27,15 @@ public protocol PlugProtocol: AnyObject, Sendable {
 
 /// Plug 默认实现
 public extension PlugProtocol {
-    static var dependencies: [any PlugProtocol.Type] { [] }
+    static var dependencies: [any PlugProtocol.Type] {
+        []
+    }
+
     func setup() async throws {}
-    func setup(resolver: PlugResolver) async throws {
+    func setup(resolver _: PlugResolver) async throws {
         try await setup()
     }
+
     func tearDown() async {}
 }
 
@@ -60,10 +64,10 @@ public enum PlugManagerError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .cyclicDependency(let cycle):
-            return "Cyclic plug dependency: \(cycle.joined(separator: " → "))"
-        case .unregisteredDependency(let p, let d):
-            return "Plug \(p) declares dependency on \(d) but it is not registered"
+        case let .cyclicDependency(cycle):
+            "Cyclic plug dependency: \(cycle.joined(separator: " → "))"
+        case let .unregisteredDependency(p, d):
+            "Plug \(p) declares dependency on \(d) but it is not registered"
         }
     }
 }

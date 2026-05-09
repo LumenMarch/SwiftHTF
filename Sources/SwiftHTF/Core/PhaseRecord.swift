@@ -30,18 +30,18 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
     public var logs: [LogEntry]
 
     public init(name: String) {
-        self.id = UUID()
+        id = UUID()
         self.name = name
-        self.startTime = Date()
-        self.endTime = nil
-        self.outcome = .pass
-        self.measurements = [:]
-        self.traces = [:]
-        self.attachments = []
-        self.errorMessage = nil
-        self.groupPath = []
-        self.diagnoses = []
-        self.logs = []
+        startTime = Date()
+        endTime = nil
+        outcome = .pass
+        measurements = [:]
+        traces = [:]
+        attachments = []
+        errorMessage = nil
+        groupPath = []
+        diagnoses = []
+        logs = []
     }
 
     /// 阶段持续时间

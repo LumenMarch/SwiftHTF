@@ -26,7 +26,7 @@ public enum TestPlanBuilder {
         components.flatMap { $0 }
     }
 
-    // 单 Phase / Group / PhaseNode 表达式
+    /// 单 Phase / Group / PhaseNode 表达式
     public static func buildExpression(_ phase: Phase) -> [PhaseNode] {
         [.phase(phase)]
     }
@@ -39,7 +39,7 @@ public enum TestPlanBuilder {
         [node]
     }
 
-    // 数组表达式
+    /// 数组表达式
     public static func buildExpression(_ phases: [Phase]) -> [PhaseNode] {
         phases.map { .phase($0) }
     }
@@ -69,9 +69,9 @@ public enum TestPlanBuilder {
     }
 }
 
-extension TestPlan {
+public extension TestPlan {
     /// 使用 result builder 构建测试计划（嵌套 Group 友好）
-    public init(
+    init(
         name: String,
         setup: [Phase]? = nil,
         teardown: [Phase]? = nil,

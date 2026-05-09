@@ -1,5 +1,5 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class TestExecutorTests: XCTestCase {
     // MARK: - 基础流程
@@ -13,7 +13,7 @@ final class TestExecutorTests: XCTestCase {
         let record = await executor.execute()
         XCTAssertEqual(record.outcome, .pass)
         XCTAssertEqual(record.phases.count, 2)
-        XCTAssertEqual(record.phases.map { $0.outcome }, [.pass, .pass])
+        XCTAssertEqual(record.phases.map(\.outcome), [.pass, .pass])
     }
 
     func testThrowingPhaseFailsTest() async {
@@ -88,7 +88,9 @@ final class TestExecutorTests: XCTestCase {
     func testRetrySucceedsEventually() async {
         actor Counter {
             var count = 0
-            func increment() -> Int { count += 1; return count }
+            func increment() -> Int {
+                count += 1; return count
+            }
         }
         let counter = Counter()
         let plan = TestPlan(name: "retry") {
@@ -135,8 +137,13 @@ final class TestExecutorTests: XCTestCase {
 
         actor Collector {
             var events: [String] = []
-            func add(_ s: String) { events.append(s) }
-            func snapshot() -> [String] { events }
+            func add(_ s: String) {
+                events.append(s)
+            }
+
+            func snapshot() -> [String] {
+                events
+            }
         }
         let collector = Collector()
 
@@ -145,7 +152,7 @@ final class TestExecutorTests: XCTestCase {
             for await event in stream {
                 switch event {
                 case .testStarted: await collector.add("testStarted")
-                case .phaseCompleted(let r): await collector.add("phase:\(r.name)")
+                case let .phaseCompleted(r): await collector.add("phase:\(r.name)")
                 case .testCompleted: await collector.add("testCompleted")
                 case .log: break
                 }

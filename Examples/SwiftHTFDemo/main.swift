@@ -2,6 +2,7 @@ import Foundation
 import SwiftHTF
 
 // MARK: - 模拟硬件 Plug
+
 //
 // 用 actor 实现 — 比 @MainActor class 更适合通用框架，状态串行化由 actor 自动保证
 
@@ -16,7 +17,7 @@ actor MockPowerSupply: PlugProtocol {
     }
 
     func readVoltage() async -> Double {
-        voltage + Double.random(in: -0.05...0.05)
+        voltage + Double.random(in: -0.05 ... 0.05)
     }
 
     func setup() async throws {
@@ -45,7 +46,7 @@ func makePlan(config: TestConfig) -> TestPlan {
                 let psu = ctx.getPlug(MockPowerSupply.self)
                 await psu.setOutput(0)
                 return .continue
-            }
+            },
         ]
     ) {
         Phase(name: "OperatorReady") { @MainActor ctx in
@@ -83,20 +84,22 @@ func makePlan(config: TestConfig) -> TestPlan {
                             config.double("vcc.marginalLower") ?? 3.2,
                             config.double("vcc.marginalUpper") ?? 3.4
                         )
-                        .withinPercent(of: vccTarget, percent: vccPercent)
+                        .withinPercent(of: vccTarget, percent: vccPercent),
                 ],
                 diagnosers: [
                     ClosureDiagnoser("vcc-overshoot") { @MainActor record, ctx in
                         guard let v = record.measurements["vcc"]?.value.asDouble else { return [] }
                         let dump = "[diag] vcc=\(v) target=\(vccTarget) lower=\(vccLower) upper=\(vccUpper)"
                         ctx.attach("vcc-trace.log", data: Data(dump.utf8), mimeType: "text/plain")
-                        return [Diagnosis(
-                            code: v > vccUpper ? "VCC_OVERSHOOT" : "VCC_UNDERSHOOT",
-                            severity: .error,
-                            message: "vcc \(v) 超出 [\(vccLower), \(vccUpper)]",
-                            details: ["vcc": .double(v), "target": .double(vccTarget)]
-                        )]
-                    }
+                        return [
+                            Diagnosis(
+                                code: v > vccUpper ? "VCC_OVERSHOOT" : "VCC_UNDERSHOOT",
+                                severity: .error,
+                                message: "vcc \(v) 超出 [\(vccLower), \(vccUpper)]",
+                                details: ["vcc": .double(v), "target": .double(vccTarget)]
+                            ),
+                        ]
+                    },
                 ]
             ) { @MainActor ctx in
                 let psu = ctx.getPlug(MockPowerSupply.self)
@@ -128,8 +131,13 @@ func makePlan(config: TestConfig) -> TestPlan {
 private final class PromptHolder: @unchecked Sendable {
     private var value: PromptPlug?
     private let lock = NSLock()
-    func set(_ p: PromptPlug) { lock.lock(); defer { lock.unlock() }; value = p }
-    func get() -> PromptPlug? { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ p: PromptPlug) {
+        lock.lock(); defer { lock.unlock() }; value = p
+    }
+
+    func get() -> PromptPlug? {
+        lock.lock(); defer { lock.unlock() }; return value
+    }
 }
 
 @MainActor
@@ -162,7 +170,7 @@ func run() async {
         outputCallbacks: [
             ConsoleOutput(),
             JSONOutput(directory: outputDir),
-            CSVOutput(directory: outputDir)
+            CSVOutput(directory: outputDir),
         ]
     )
 
@@ -179,13 +187,13 @@ func run() async {
     let listener = Task { [executor] in
         for await event in await executor.events() {
             switch event {
-            case .testStarted(let name, let sn):
+            case let .testStarted(name, sn):
                 print("[event] testStarted plan=\(name) sn=\(sn ?? "-")")
-            case .phaseCompleted(let r):
+            case let .phaseCompleted(r):
                 print("[event] phase \(r.name) -> \(r.outcome.rawValue) (\(String(format: "%.2f", r.duration))s)")
-            case .log(let msg):
+            case let .log(msg):
                 print("[event] log: \(msg)")
-            case .testCompleted(let r):
+            case let .testCompleted(r):
                 print("[event] testCompleted -> \(r.outcome.rawValue)")
             }
         }
@@ -195,20 +203,20 @@ func run() async {
     // SwiftUI 真实场景里换成在 View 中 `for await req in plug.events()` 触发 sheet。
     let promptListener = Task { @MainActor in
         var plug: PromptPlug?
-        for _ in 0..<200 {
+        for _ in 0 ..< 200 {
             if let p = promptHolder.get() { plug = p; break }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         guard let plug else { return }
         for await req in plug.events() {
             switch req.kind {
-            case .confirm(let msg):
+            case let .confirm(msg):
                 print("[prompt] confirm: \(msg) -> auto YES")
                 plug.resolve(id: req.id, response: .confirm(true))
-            case .text(let msg, _):
+            case let .text(msg, _):
                 print("[prompt] text: \(msg) -> auto SN-DEMO-0001")
                 plug.resolve(id: req.id, response: .text("SN-DEMO-0001"))
-            case .choice(let msg, let opts):
+            case let .choice(msg, opts):
                 print("[prompt] choice: \(msg) options=\(opts) -> auto 0")
                 plug.resolve(id: req.id, response: .choice(0))
             }

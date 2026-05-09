@@ -23,7 +23,7 @@ public final class TestContext {
 
     /// 当前 phase 注入的 series spec 字典（PhaseExecutor 在 attempt 起始注入；
     /// `recordSeries` 默认从这里取维度/单位）
-    internal var seriesSpecs: [String: SeriesMeasurementSpec] = [:]
+    var seriesSpecs: [String: SeriesMeasurementSpec] = [:]
 
     /// 当前 phase 收集的二进制附件（按写入顺序，每次 phase 开始时由 PhaseExecutor 重置）
     public internal(set) var attachments: [Attachment] = []
@@ -33,7 +33,7 @@ public final class TestContext {
 
     /// PhaseExecutor 在 attempt 起始注入的事件流回调，phase 内 log 同步发出。
     /// 闭包之外（包括 phase harvest 之后）保持 nil。
-    internal var logEmitter: (@Sendable (LogEntry) -> Void)?
+    var logEmitter: (@Sendable (LogEntry) -> Void)?
 
     /// 已解析的 Plug 实例字典（按类型名索引）
     private let resolvedPlugs: [String: any PlugProtocol]
@@ -63,13 +63,24 @@ public final class TestContext {
     }
 
     /// 便捷：debug 级别
-    public func logDebug(_ message: String) { log(.debug, message) }
+    public func logDebug(_ message: String) {
+        log(.debug, message)
+    }
+
     /// 便捷：info 级别
-    public func logInfo(_ message: String) { log(.info, message) }
+    public func logInfo(_ message: String) {
+        log(.info, message)
+    }
+
     /// 便捷：warning 级别
-    public func logWarning(_ message: String) { log(.warning, message) }
+    public func logWarning(_ message: String) {
+        log(.warning, message)
+    }
+
     /// 便捷：error 级别
-    public func logError(_ message: String) { log(.error, message) }
+    public func logError(_ message: String) {
+        log(.error, message)
+    }
 
     // MARK: - 类型化测量
 
@@ -78,7 +89,7 @@ public final class TestContext {
     ///   - name: 测量名（在 phase 内唯一）
     ///   - value: 任意 `Encodable` 值（Bool/Int/Double/String/嵌套结构）
     ///   - unit: 单位（可选，例如 "V"、"mA"、"%"）
-    public func measure<T: Encodable>(_ name: String, _ value: T, unit: String? = nil) {
+    public func measure(_ name: String, _ value: some Encodable, unit: String? = nil) {
         let coded = AnyCodableValue.from(value)
         measurements[name] = Measurement(
             name: name,

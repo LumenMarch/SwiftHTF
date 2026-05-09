@@ -35,7 +35,7 @@ public actor PlugManager {
     }
 
     /// 解除注册（swap 时使用）
-    public func unregister<T: PlugProtocol>(_ type: T.Type) {
+    public func unregister(_ type: (some PlugProtocol).Type) {
         let key = String(describing: type)
         factories.removeValue(forKey: key)
         depsByKey.removeValue(forKey: key)
@@ -48,9 +48,9 @@ public actor PlugManager {
     /// 用于：
     /// - protocol 抽象 + 多实现切换（生产 vs 仿真）
     /// - 方便测试时把真实 plug 替换成 mock（结合 `swap`）
-    public func bind<A: PlugProtocol, C: PlugProtocol>(
-        _ abstract: A.Type,
-        to concrete: C.Type
+    public func bind(
+        _ abstract: (some PlugProtocol).Type,
+        to concrete: (some PlugProtocol).Type
     ) {
         aliases[String(describing: abstract)] = String(describing: concrete)
     }
@@ -59,9 +59,9 @@ public actor PlugManager {
     /// 1. 移除 A 的 factory
     /// 2. 注册 B
     /// 3. 把 `A` 别名到 `B`，`ctx.getPlug(A.self)` 仍能拿到（实际是 B 实例）
-    public func swap<A: PlugProtocol, B: PlugProtocol>(
-        _ a: A.Type,
-        with b: B.Type
+    public func swap(
+        _ a: (some PlugProtocol).Type,
+        with b: (some PlugProtocol).Type
     ) {
         unregister(a)
         register(b)
@@ -69,8 +69,8 @@ public actor PlugManager {
     }
 
     /// 工厂闭包版本的 swap
-    public func swap<A: PlugProtocol, B: PlugProtocol>(
-        _ a: A.Type,
+    public func swap<B: PlugProtocol>(
+        _ a: (some PlugProtocol).Type,
         with b: B.Type,
         factory: @escaping @MainActor @Sendable () -> B
     ) {

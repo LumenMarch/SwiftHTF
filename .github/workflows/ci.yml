@@ -24,3 +24,23 @@ jobs:
 
       - name: Test
         run: swift test -v
+
+  lint:
+    name: Lint (SwiftFormat + SwiftLint)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SwiftFormat & SwiftLint
+        run: brew install swiftformat swiftlint
+
+      - name: Show tool versions
+        run: |
+          swiftformat --version
+          swiftlint version
+
+      - name: SwiftFormat (lint)
+        run: swiftformat --lint .
+
+      - name: SwiftLint (strict)
+        run: swiftlint lint --strict

@@ -12,6 +12,30 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-09
+
+### Changed
+
+- Move the `SwiftHTFDemo` / `SwiftHTFSwiftUIDemo` executable targets out
+  of `Sources/` into a dedicated `Examples/` directory, keeping the
+  shipped library source tree (`Sources/SwiftHTF`, `Sources/SwiftHTFUI`)
+  clean. `Package.swift` points at the new locations via `path:`;
+  target names and `swift run` commands are unchanged.
+- Reformat the entire codebase with SwiftFormat 0.61 defaults
+  (`--swiftversion 5.9`). No semantic changes; all 185 tests still pass.
+
+### Added
+
+- `.swiftformat` and `.swiftlint.yml` configs at the repo root.
+- CI `lint` job (macOS) that installs SwiftFormat + SwiftLint via Homebrew
+  and runs `swiftformat --lint .` plus `swiftlint lint --strict`. Lint
+  failures now block PRs.
+
+### Documentation
+
+- Tighten wording in core-type doc comments (DSL / Engine / Output /
+  Plugs).
+
 ## [0.1.0] - 2026-05-09
 
 First public release. Covers manufacturing / bring-up test plan
@@ -81,5 +105,6 @@ multi-DUT concurrency, history persistence, and SwiftUI integration.
   enabled across all targets; phase code runs `@MainActor`.
 - 185 unit tests across `SwiftHTFTests` / `SwiftHTFUITests`.
 
-[Unreleased]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HunterFirefly/SwiftHTF/releases/tag/v0.1.0

@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class FailureExceptionsTests: XCTestCase {
-
     private struct DUTRefusedToBoot: Error {}
     private struct UnexpectedCrash: Error {}
 
@@ -39,7 +38,9 @@ final class FailureExceptionsTests: XCTestCase {
     }
 
     func testRetryStillTriggeredBeforeFailMapping() async {
-        actor Counter { var n = 0; func inc() -> Int { n += 1; return n } }
+        actor Counter { var n = 0; func inc() -> Int {
+            n += 1; return n
+        } }
         let counter = Counter()
         let plan = TestPlan(name: "retry_then_fail") {
             Phase(

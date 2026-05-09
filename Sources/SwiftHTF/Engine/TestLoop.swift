@@ -42,8 +42,8 @@ public actor TestLoop {
     private var task: Task<Void, Never>?
     private var continuations: [UUID: AsyncStream<State>.Continuation] = [:]
     private var emittedStates: [State] = [.idle]
-    private(set) public var currentState: State = .idle
-    private(set) public var completedCount: Int = 0
+    public private(set) var currentState: State = .idle
+    public private(set) var completedCount: Int = 0
 
     public init(
         executor: TestExecutor,
@@ -79,7 +79,9 @@ public actor TestLoop {
         let id = UUID()
         var continuation: AsyncStream<State>.Continuation!
         let stream = AsyncStream<State> { c in continuation = c }
-        for s in emittedStates { continuation.yield(s) }
+        for s in emittedStates {
+            continuation.yield(s)
+        }
         if currentState == .stopped {
             continuation.finish()
             return stream
@@ -102,7 +104,9 @@ public actor TestLoop {
     private func setState(_ s: State) {
         currentState = s
         emittedStates.append(s)
-        for c in continuations.values { c.yield(s) }
+        for c in continuations.values {
+            c.yield(s)
+        }
     }
 
     private func runLoop() async {
@@ -117,7 +121,9 @@ public actor TestLoop {
             await onCompleted(record)
         }
         setState(.stopped)
-        for c in continuations.values { c.finish() }
+        for c in continuations.values {
+            c.finish()
+        }
         continuations.removeAll()
     }
 }

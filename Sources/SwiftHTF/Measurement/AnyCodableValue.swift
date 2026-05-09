@@ -46,40 +46,40 @@ public indirect enum AnyCodableValue: Sendable, Codable, Equatable {
         var container = encoder.singleValueContainer()
         switch self {
         case .null: try container.encodeNil()
-        case .bool(let v): try container.encode(v)
-        case .int(let v): try container.encode(v)
-        case .double(let v): try container.encode(v)
-        case .string(let v): try container.encode(v)
-        case .array(let v): try container.encode(v)
-        case .object(let v): try container.encode(v)
+        case let .bool(v): try container.encode(v)
+        case let .int(v): try container.encode(v)
+        case let .double(v): try container.encode(v)
+        case let .string(v): try container.encode(v)
+        case let .array(v): try container.encode(v)
+        case let .object(v): try container.encode(v)
         }
     }
 
     // MARK: - 类型化访问器
 
     public var asBool: Bool? {
-        if case .bool(let v) = self { return v }
+        if case let .bool(v) = self { return v }
         return nil
     }
 
     public var asInt: Int? {
         switch self {
-        case .int(let v): return Int(exactly: v)
-        case .double(let v) where v.rounded() == v: return Int(exactly: v)
-        default: return nil
+        case let .int(v): Int(exactly: v)
+        case let .double(v) where v.rounded() == v: Int(exactly: v)
+        default: nil
         }
     }
 
     public var asDouble: Double? {
         switch self {
-        case .double(let v): return v
-        case .int(let v): return Double(v)
-        default: return nil
+        case let .double(v): v
+        case let .int(v): Double(v)
+        default: nil
         }
     }
 
     public var asString: String? {
-        if case .string(let v) = self { return v }
+        if case let .string(v) = self { return v }
         return nil
     }
 
@@ -87,10 +87,10 @@ public indirect enum AnyCodableValue: Sendable, Codable, Equatable {
     public var displayString: String {
         switch self {
         case .null: return ""
-        case .bool(let v): return v ? "true" : "false"
-        case .int(let v): return String(v)
-        case .double(let v): return String(v)
-        case .string(let v): return v
+        case let .bool(v): return v ? "true" : "false"
+        case let .int(v): return String(v)
+        case let .double(v): return String(v)
+        case let .string(v): return v
         case .array, .object:
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
@@ -104,7 +104,7 @@ public indirect enum AnyCodableValue: Sendable, Codable, Equatable {
     // MARK: - 工厂
 
     /// 从任意 `Encodable` 值构造（通过 JSON 中转），失败时返回 `.null`
-    public static func from<T: Encodable>(_ value: T) -> AnyCodableValue {
+    public static func from(_ value: some Encodable) -> AnyCodableValue {
         // 快速路径
         switch value {
         case let v as Bool: return .bool(v)

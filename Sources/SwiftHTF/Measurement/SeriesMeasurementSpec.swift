@@ -120,10 +120,10 @@ public struct SeriesMeasurementSpec: Sendable {
         for v in validators {
             switch v.validate(samples: samples, dimensions: dims, value: val) {
             case .pass: break
-            case .marginal(let msg):
+            case let .marginal(msg):
                 marginal = true
                 messages.append(msg)
-            case .fail(let msg):
+            case let .fail(msg):
                 failed = true
                 messages.append(msg)
             }
@@ -182,8 +182,8 @@ public struct SeriesLengthValidator: SeriesValidator {
 
     public func validate(
         samples: [[AnyCodableValue]],
-        dimensions: [Dimension],
-        value: Dimension
+        dimensions _: [Dimension],
+        value _: Dimension
     ) -> MeasurementValidationResult {
         let n = samples.count
         if let lower, n < lower {
@@ -197,10 +197,10 @@ public struct SeriesLengthValidator: SeriesValidator {
 
     public var label: String {
         switch (lower, upper) {
-        case (.some(let lo), .some(let hi)): return "length[\(lo), \(hi)]"
-        case (.some(let lo), nil): return "length>=\(lo)"
-        case (nil, .some(let hi)): return "length<=\(hi)"
-        case (nil, nil): return "length"
+        case let (.some(lo), .some(hi)): "length[\(lo), \(hi)]"
+        case (.some(let lo), nil): "length>=\(lo)"
+        case (nil, let .some(hi)): "length<=\(hi)"
+        case (nil, nil): "length"
         }
     }
 }
@@ -220,17 +220,17 @@ public struct PerSampleValidator: SeriesValidator {
 
     public func validate(
         samples: [[AnyCodableValue]],
-        dimensions: [Dimension],
-        value: Dimension
+        dimensions _: [Dimension],
+        value _: Dimension
     ) -> MeasurementValidationResult {
         var failedMsgs: [String] = []
         var marginalMsgs: [String] = []
         for (idx, row) in samples.enumerated() {
             switch block(row) {
             case .pass: continue
-            case .marginal(let msg):
+            case let .marginal(msg):
                 marginalMsgs.append("[#\(idx)] \(msg)")
-            case .fail(let msg):
+            case let .fail(msg):
                 failedMsgs.append("[#\(idx)] \(msg)")
             }
         }

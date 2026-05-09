@@ -1,9 +1,8 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 @MainActor
 final class PromptPlugTests: XCTestCase {
-
     // MARK: - 基础回路
 
     func testRequestConfirmRoundTrip() async {
@@ -143,14 +142,22 @@ final class PromptPlugTests: XCTestCase {
     func testMultipleSubscribersAllReceive() async {
         let prompt = PromptPlug()
 
-        actor Box { var hits = 0; func inc() { hits += 1 }; func value() -> Int { hits } }
+        actor Box { var hits = 0; func inc() {
+            hits += 1
+        }; func value() -> Int {
+            hits
+        } }
         let box = Box()
 
         let s1 = prompt.events()
         let s2 = prompt.events()
 
-        let l1 = Task { for await _ in s1 { await box.inc() } }
-        let l2 = Task { for await _ in s2 { await box.inc() } }
+        let l1 = Task { for await _ in s1 {
+            await box.inc()
+        } }
+        let l2 = Task { for await _ in s2 {
+            await box.inc()
+        } }
 
         // 让订阅就绪后再发请求
         try? await Task.sleep(nanoseconds: 30_000_000)
@@ -206,7 +213,7 @@ final class PromptPlugTests: XCTestCase {
         let listener = Task { @MainActor in
             // 轮询拿到 plug 实例
             var plug: PromptPlug?
-            for _ in 0..<200 {
+            for _ in 0 ..< 200 {
                 if let p = answerHolder.get() { plug = p; break }
                 try? await Task.sleep(nanoseconds: 10_000_000)
             }
@@ -234,6 +241,7 @@ private final class AnswerHolder: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         plug = p
     }
+
     func get() -> PromptPlug? {
         lock.lock(); defer { lock.unlock() }
         return plug

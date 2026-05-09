@@ -1,8 +1,7 @@
-import XCTest
 @testable import SwiftHTF
+import XCTest
 
 final class TestConfigTests: XCTestCase {
-
     // MARK: - 加载
 
     func testLoadFromValidJSON() throws {

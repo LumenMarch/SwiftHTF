@@ -42,7 +42,7 @@ public actor TestExecutor {
     // MARK: - Plug 注册
 
     /// 注册 Plug 类型（无参 init）
-    public func register<T: PlugProtocol>(_ type: T.Type) async {
+    public func register(_ type: (some PlugProtocol).Type) async {
         registrationFns.append { mgr in
             await mgr.register(type)
         }
@@ -61,9 +61,9 @@ public actor TestExecutor {
     /// 把抽象类型别名到已注册的具体类型。phase 代码用 `ctx.getPlug(Abstract.self)`
     /// 时实际拿到 `Concrete` 实例。
     /// `Concrete` 必须已经通过 `register` 登记。
-    public func bind<A: PlugProtocol, C: PlugProtocol>(
-        _ abstract: A.Type,
-        to concrete: C.Type
+    public func bind(
+        _ abstract: (some PlugProtocol).Type,
+        to concrete: (some PlugProtocol).Type
     ) async {
         registrationFns.append { mgr in
             await mgr.bind(abstract, to: concrete)
@@ -72,9 +72,9 @@ public actor TestExecutor {
 
     /// 用 `B` 替换 `A` 的注册（mock 注入）。会移除 A 的 factory，注册 B，
     /// 并把 `A` 别名到 `B`，使 `ctx.getPlug(A.self)` 得到 B 实例。
-    public func swap<A: PlugProtocol, B: PlugProtocol>(
-        _ a: A.Type,
-        with b: B.Type
+    public func swap(
+        _ a: (some PlugProtocol).Type,
+        with b: (some PlugProtocol).Type
     ) async {
         registrationFns.append { mgr in
             await mgr.swap(a, with: b)
@@ -82,8 +82,8 @@ public actor TestExecutor {
     }
 
     /// 工厂闭包版 swap
-    public func swap<A: PlugProtocol, B: PlugProtocol>(
-        _ a: A.Type,
+    public func swap<B: PlugProtocol>(
+        _ a: (some PlugProtocol).Type,
         with b: B.Type,
         factory: @escaping @MainActor @Sendable () -> B
     ) async {
@@ -165,7 +165,9 @@ public actor TestExecutor {
     }
 
     private func broadcast(_ event: TestEvent) {
-        for c in continuations.values { c.yield(event) }
+        for c in continuations.values {
+            c.yield(event)
+        }
     }
 }
 
@@ -203,11 +205,11 @@ public enum TestError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .timeout(let s): return s
-        case .noRespond(let s): return s
-        case .unknown(let s): return s
-        case .validationFailed(let s): return s
-        case .maxRetriesExceeded: return "Max retries exceeded"
+        case let .timeout(s): s
+        case let .noRespond(s): s
+        case let .unknown(s): s
+        case let .validationFailed(s): s
+        case .maxRetriesExceeded: "Max retries exceeded"
         }
     }
 }
