@@ -32,9 +32,14 @@ actor MockPowerSupply: PlugProtocol {
 // MARK: - 测试计划（result builder）
 
 @MainActor
-func makePlan() -> TestPlan {
-    TestPlan(
-        name: "DemoBoard",
+func makePlan(config: TestConfig) -> TestPlan {
+    let vccLower = config.double("vcc.lower") ?? 3.0
+    let vccUpper = config.double("vcc.upper") ?? 3.6
+    let vccTarget = config.double("vcc.target") ?? 3.3
+    let vccPercent = config.double("vcc.percent") ?? 10.0
+
+    return TestPlan(
+        name: config.string("plan.name") ?? "DemoBoard",
         teardown: [
             Phase(name: "PowerOff") { @MainActor ctx in
                 let psu = ctx.getPlug(MockPowerSupply.self)
@@ -45,7 +50,9 @@ func makePlan() -> TestPlan {
     ) {
         Phase(name: "OperatorReady") { @MainActor ctx in
             let prompt = ctx.getPlug(PromptPlug.self)
-            let ok = await prompt.requestConfirm("放好治具并按确认？")
+            let ok = await prompt.requestConfirm(
+                ctx.config.string("prompts.ready") ?? "放好治具并按确认？"
+            )
             ctx.measure("operator_ready", ok)
             return ok ? .continue : .stop
         }
@@ -60,7 +67,7 @@ func makePlan() -> TestPlan {
 
         Phase(name: "PowerOn") { @MainActor ctx in
             let psu = ctx.getPlug(MockPowerSupply.self)
-            await psu.setOutput(3.3)
+            await psu.setOutput(vccTarget)
             return .continue
         }
 
@@ -68,8 +75,8 @@ func makePlan() -> TestPlan {
             name: "VccCheck",
             measurements: [
                 .named("vcc", unit: "V", description: "主电源电压")
-                    .inRange(3.0, 3.6)
-                    .withinPercent(of: 3.3, percent: 10)
+                    .inRange(vccLower, vccUpper)
+                    .withinPercent(of: vccTarget, percent: vccPercent)
             ]
         ) { @MainActor ctx in
             let psu = ctx.getPlug(MockPowerSupply.self)
@@ -108,12 +115,25 @@ private final class PromptHolder: @unchecked Sendable {
 
 @MainActor
 func run() async {
-    let plan = makePlan()
+    // 内嵌一份 demo 用的 config（实际项目中会用 TestConfig.load(from: url)）
+    let cfgJSON = #"""
+    {
+        "plan.name": "DemoBoard",
+        "vcc.target": 3.3,
+        "vcc.lower": 3.0,
+        "vcc.upper": 3.6,
+        "vcc.percent": 10,
+        "prompts.ready": "放好治具并按确认（来自 config）"
+    }
+    """#
+    let config = (try? TestConfig.load(from: Data(cfgJSON.utf8))) ?? TestConfig()
+    let plan = makePlan(config: config)
 
     let outputDir = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("SwiftHTFDemo")
     let executor = TestExecutor(
         plan: plan,
+        config: config,
         outputCallbacks: [
             ConsoleOutput(),
             JSONOutput(directory: outputDir),

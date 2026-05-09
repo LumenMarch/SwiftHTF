@@ -26,9 +26,17 @@ public final class TestContext {
     /// 已解析的 Plug 实例字典（按类型名索引）
     private let resolvedPlugs: [String: any PlugProtocol]
 
-    init(serialNumber: String? = nil, resolvedPlugs: [String: any PlugProtocol]) {
+    /// 测试配置（由 TestExecutor 注入）
+    public let config: TestConfig
+
+    init(
+        serialNumber: String? = nil,
+        resolvedPlugs: [String: any PlugProtocol],
+        config: TestConfig = TestConfig()
+    ) {
         self.serialNumber = serialNumber
         self.resolvedPlugs = resolvedPlugs
+        self.config = config
     }
 
     // MARK: - 测试值（旧 API，仍可用）

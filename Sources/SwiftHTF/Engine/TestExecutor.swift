@@ -16,6 +16,7 @@ public actor TestExecutor {
     private let plan: TestPlan
     private let plugManager: PlugManager
     private let outputCallbacks: [OutputCallback]
+    private let config: TestConfig
 
     public private(set) var isRunning: Bool = false
     private var currentTask: Task<TestRecord, Never>?
@@ -24,12 +25,15 @@ public actor TestExecutor {
     /// 初始化
     /// - Parameters:
     ///   - plan: 测试计划
+    ///   - config: 测试配置（phase 内通过 ctx.config 访问）
     ///   - outputCallbacks: 输出回调
     public init(
         plan: TestPlan,
+        config: TestConfig = TestConfig(),
         outputCallbacks: [OutputCallback] = []
     ) {
         self.plan = plan
+        self.config = config
         self.plugManager = PlugManager()
         self.outputCallbacks = outputCallbacks
     }
@@ -121,8 +125,9 @@ public actor TestExecutor {
             return record
         }
 
+        let cfg = config
         let context = await MainActor.run {
-            TestContext(serialNumber: serialNumber, resolvedPlugs: resolvedPlugs)
+            TestContext(serialNumber: serialNumber, resolvedPlugs: resolvedPlugs, config: cfg)
         }
 
         // setup phases
