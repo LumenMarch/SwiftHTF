@@ -149,9 +149,11 @@ public final class PhaseExecutor {
                 }
 
                 phaseRecord.endTime = Date()
-                phaseRecord.outcome = .error
+                let outcome: PhaseOutcomeType = isFailureException(error, phase: phase) ? .fail : .error
+                phaseRecord.outcome = outcome
                 phaseRecord.errorMessage = error.localizedDescription
-                log("[\(phase.definition.name)] ---> ERROR: \(error.localizedDescription)")
+                let label = outcome == .fail ? "FAIL" : "ERROR"
+                log("[\(phase.definition.name)] ---> \(label): \(error.localizedDescription)")
                 return harvest(phaseRecord, phase: phase)
             }
         }
@@ -161,6 +163,13 @@ public final class PhaseExecutor {
         phaseRecord.outcome = .error
         phaseRecord.errorMessage = (lastError ?? TestError.unknown("Unknown error")).localizedDescription
         return harvest(phaseRecord, phase: phase)
+    }
+
+    /// phase.failureExceptions 与抛出 error 的精确类型匹配？
+    private nonisolated func isFailureException(_ error: Error, phase: Phase) -> Bool {
+        let errorType = type(of: error)
+        let errorId = ObjectIdentifier(errorType)
+        return phase.failureExceptions.contains { ObjectIdentifier($0) == errorId }
     }
 
     /// 将 ctx.measurements 收集到 phaseRecord，按 phase.measurements 中的 spec 跑 validator，

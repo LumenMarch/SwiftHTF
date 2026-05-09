@@ -49,6 +49,9 @@ public struct Phase: Identifiable, Sendable {
     public let repeatOnMeasurementFail: Int
     /// 失败时跑的诊断器（仅 phase 终态 outcome=.fail/.error 时触发）
     public let diagnosers: [any PhaseDiagnoser]
+    /// 异常类型白名单：phase 闭包抛出此处列出的精确类型时，outcome 标 .fail（业务失败），
+    /// 否则维持 .error（程序错误）。retry 行为不受影响 —— throw 仍触发 retryCount 重试。
+    public let failureExceptions: [any Error.Type]
 
     /// 初始化
     public init(
@@ -60,7 +63,8 @@ public struct Phase: Identifiable, Sendable {
         measurements: [MeasurementSpec] = [],
         runIf: RunIfPredicate? = nil,
         repeatOnMeasurementFail: Int = 0,
-        diagnosers: [any PhaseDiagnoser] = []
+        diagnosers: [any PhaseDiagnoser] = [],
+        failureExceptions: [any Error.Type] = []
     ) {
         self.definition = definition
         self.validators = validators
@@ -71,6 +75,7 @@ public struct Phase: Identifiable, Sendable {
         self.runIf = runIf
         self.repeatOnMeasurementFail = repeatOnMeasurementFail
         self.diagnosers = diagnosers
+        self.failureExceptions = failureExceptions
     }
 
     /// 便捷初始化
@@ -85,6 +90,7 @@ public struct Phase: Identifiable, Sendable {
         runIf: RunIfPredicate? = nil,
         repeatOnMeasurementFail: Int = 0,
         diagnosers: [any PhaseDiagnoser] = [],
+        failureExceptions: [any Error.Type] = [],
         execute: @escaping @Sendable @MainActor (TestContext) async throws -> PhaseResult
     ) {
         self.definition = PhaseDefinition(
@@ -101,5 +107,6 @@ public struct Phase: Identifiable, Sendable {
         self.runIf = runIf
         self.repeatOnMeasurementFail = repeatOnMeasurementFail
         self.diagnosers = diagnosers
+        self.failureExceptions = failureExceptions
     }
 }
