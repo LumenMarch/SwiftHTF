@@ -12,7 +12,38 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-05-15
+## [0.3.0] - 2026-05-15
+
+BI / 可视化 / 数据对齐 milestone：补齐 measurement transform、JSON Schema
+导出、series plotting helper —— OpenHTF parity 之外的"实际落地需要的工具集"。
+
+### Added
+
+- **`MeasurementSpec.transform { ... }`**：对齐 OpenHTF `with_args(transform_fn=…)`
+  - 单 `(AnyCodableValue) -> AnyCodableValue` 闭包，在跑 validator **之前**
+    把原始 ctx.measure 值映射成物理量（mV → V / ADC 线性化 / log scale）
+  - 多次调用后者覆盖前者（不做隐式 compose）
+  - `Measurement.rawValue: AnyCodableValue?` 新字段保留 transform 前原值，
+    供 BI / 审计；未配 transform 时为 nil。显式 Codable 兼容旧 JSON
+- **`TestPlan.exportSchema() throws -> Data`**：把 plan 里所有 phase /
+  group / subtest 的 measurement spec 序列化为 JSON Schema Draft-07 文档，
+  供 BI / 看板 / 跨语言系统消费。
+  - validator → 标准 keyword 映射（minimum/maximum、const、pattern、enum、
+    minLength/minItems 等）
+  - 未映射的 validator（marginalRange / setEquals / notEmpty / custom）
+    label 写入 `x-swifthtf-validators` 扩展数组，标签信息无损
+  - 自定义扩展字段：`x-swifthtf-unit` / `x-swifthtf-optional` /
+    `x-swifthtf-series`（含 dimensions + value 维度布局）/ `x-swifthtf-version`
+  - 同名 spec 由后定义覆盖（与运行时 harvest 行为一致）
+  - 额外 `TestPlan.exportSchemaObject()` 拿到 `AnyCodableValue` 树
+- **`SeriesMeasurement` plotting helper**：纯数值 helper，不引 Charts 依赖。
+  - `column(_:)` / `doubles(_:)`：按维度名取列
+  - `points(xDim:yDim:)` / `xyPoints()`：取 2 维 (x, y) 数值对
+  - `xyzPoints()`：取 3 维 (x, y, z)，热力图 / 等高线用
+  - `bounds()`：每列 (min, max)
+  - 容错：维度名不存在返回空数组（适合 SwiftUI body 直接使用）；非数字行跳过
+
+
 
 OpenHTF 对齐 milestone：覆盖 Subtest / Checkpoint / TestDiagnoser /
 ctx.state / Prompt 超时 / TestConfig 多源 / Measurement validators 补全 /
@@ -213,7 +244,8 @@ multi-DUT concurrency, history persistence, and SwiftUI integration.
   enabled across all targets; phase code runs `@MainActor`.
 - 185 unit tests across `SwiftHTFTests` / `SwiftHTFUITests`.
 
-[Unreleased]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HunterFirefly/SwiftHTF/releases/tag/v0.1.0
