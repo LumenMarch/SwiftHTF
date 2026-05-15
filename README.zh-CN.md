@@ -24,6 +24,7 @@
 - **附件 `attach`** —— phase 内 `ctx.attach(name:data:mimeType:)` / `attachFromFile(_:)`，自动 base64 进 JSON、Console / CSV 摘要。
 - **Phase 局部日志** —— `ctx.logInfo / logWarning / logError(...)` 写入 `PhaseRecord.logs: [LogEntry]` 同时实时广播到事件流；retry 时仅保留最后一次 attempt 的日志。
 - **配置 `TestConfig`** —— JSON 加载，phase 内 `ctx.config.string(...) / double(...) / value(_, as:)` 读取，零外部依赖。
+- **Phase 间共享状态 `ctx.state`** —— session 级可变字典，API 镜像 `TestConfig`（`string` / `int` / `double` / `bool` / `value(_:as:)` + `set(_:_:)`）；phase 间传中间值用，不进 `TestRecord`（要持久化用 `measure`）。
 - **可插拔硬件 (`Plug`)** —— 支持 `init()` 或工厂闭包注册；声明 `dependencies` 后 `PlugManager` 自动拓扑排序，`setup(resolver:)` 注入已就绪的依赖。
 - **Plug 替身 (`bind` / `swap`)** —— `executor.swap(RealPSU.self, with: MockPSU.self)` 把真实 plug 整组替换为 mock；phase 代码 `ctx.getPlug(RealPSU.self)` 不变。
 - **操作员交互 (`PromptPlug`)** —— phase 内 `await prompt.requestConfirm(..., timeout: 30) / requestText(...) / requestChoice(...)` 挂起；可选单次超时；UI 端用 `events()` 订阅、`resolve(...)` 应答，再通过 `resolutions()` 信号流自动撤回 SwiftUI sheet（用户回应 / cancel / timeout 任一原因都会通知）。

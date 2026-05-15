@@ -14,6 +14,13 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Phase 间共享状态 `ctx.state`**：session 级可变字典，phase 间传中间值用。
+  - 类型 `PhaseState`：`@MainActor` class，API 镜像 `TestConfig`
+    （`string` / `int` / `double` / `bool` / `value(_:as:)` + `set(_:_:)` +
+    subscript / `contains` / `remove` / `clear` / `keys`）
+  - 不进 `TestRecord`（运行时态——要持久化用 `measure(...)`）
+  - 多 session 各自独立（每个 session 一个 `TestContext`）
+  - `runIf` 闭包也能读 state，便于"前一 phase 决定后续是否跑"模式
 - **`TestDiagnoser` 测试级诊断**：与 `PhaseDiagnoser` 平级的新协议，对整个
   `TestRecord` 跑后处理（outcome 已定、tearDown 之前）。
   - 通过 `TestPlan(name:, diagnosers: [...])` 声明

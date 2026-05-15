@@ -41,6 +41,11 @@ public final class TestContext {
     /// 测试配置（由 TestExecutor 注入）
     public let config: TestConfig
 
+    /// session 级共享状态：phase 间传中间值用。@MainActor 单线程访问；
+    /// 不进 `TestRecord`（运行时态——想持久化用 `measure(...)` 或 `metadata`）。
+    /// 与 `config` 镜像 API（`string` / `int` / `double` / `bool` / `value(_:as:)`）。
+    public let state: PhaseState = .init()
+
     init(
         serialNumber: String? = nil,
         resolvedPlugs: [String: any PlugProtocol],
