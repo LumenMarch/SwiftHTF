@@ -19,7 +19,7 @@
 - **三态 outcome** —— `pass` / `marginalPass` / `fail` / `error` / `skip`，支持靠近边界但仍合格的"放行但需关注"语义。
 - **运行时条件门 `runIf`** —— Phase 与 Group 都可挂 `runIf` 闭包，访问当前 `ctx.config` / 已收集的状态决定是否执行。
 - **测量重跑** —— `repeatOnMeasurementFail`（measurement 失败重跑）与 `retryCount`（异常 / 显式 retry）独立计数，互不消耗。
-- **故障诊断** —— `PhaseDiagnoser` 在 phase fail/.error 终态触发，可读 record + 写 `ctx.attach` / `ctx.measure` / `ctx.log` 留下调试线索；`Diagnosis` 带 severity / 故障码 / 任意 details。
+- **故障诊断** —— `PhaseDiagnoser` 在 phase fail/.error 终态触发，可读 record + 写 `ctx.attach` / `ctx.measure` / `ctx.log` 留下调试线索；`TestDiagnoser` 在测试收尾时（outcome 已定、tearDown 之前）跑一次，对整个 `TestRecord` 做后处理 —— 适合跨 phase 汇总、多电源弱信号合成故障码等场景。`Diagnosis` 带 severity / 故障码 / 任意 details。
 - **异常分流** —— `failureExceptions` 白名单：抛指定类型→`.fail`（业务失败），其他→`.error`（程序错误）。
 - **附件 `attach`** —— phase 内 `ctx.attach(name:data:mimeType:)` / `attachFromFile(_:)`，自动 base64 进 JSON、Console / CSV 摘要。
 - **Phase 局部日志** —— `ctx.logInfo / logWarning / logError(...)` 写入 `PhaseRecord.logs: [LogEntry]` 同时实时广播到事件流；retry 时仅保留最后一次 attempt 的日志。

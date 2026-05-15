@@ -73,6 +73,9 @@ public struct TestRecord: Sendable, Codable, Identifiable {
     /// Subtest 聚合记录（按执行顺序）。subtest 内 phase 仍存于 `phases`，本数组仅作为聚合层。
     /// 旧 JSON 不含此字段时反序列化为空数组。
     public var subtests: [SubtestRecord]
+    /// 测试级诊断结果（由 `TestPlan.diagnosers` 在测试收尾时产生）。
+    /// 旧 JSON 不含此字段时反序列化为空数组。
+    public var diagnoses: [Diagnosis]
     public var metadata: [String: String]
 
     public init(planName: String, serialNumber: String?) {
@@ -84,6 +87,7 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         outcome = .pass
         phases = []
         subtests = []
+        diagnoses = []
         metadata = [:]
     }
 
@@ -98,10 +102,10 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         phases.filter { $0.outcome == .fail || $0.outcome == .error }
     }
 
-    /// 显式 Codable：兼容旧 JSON 中无 subtests 字段
+    /// 显式 Codable：兼容旧 JSON 中无 subtests / diagnoses 字段
     private enum CodingKeys: String, CodingKey {
         case id, planName, serialNumber, startTime, endTime, outcome
-        case phases, subtests, metadata
+        case phases, subtests, diagnoses, metadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -114,6 +118,7 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         outcome = try c.decode(TestOutcome.self, forKey: .outcome)
         phases = try c.decodeIfPresent([PhaseRecord].self, forKey: .phases) ?? []
         subtests = try c.decodeIfPresent([SubtestRecord].self, forKey: .subtests) ?? []
+        diagnoses = try c.decodeIfPresent([Diagnosis].self, forKey: .diagnoses) ?? []
         metadata = try c.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
     }
 
@@ -127,6 +132,7 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         try c.encode(outcome, forKey: .outcome)
         try c.encode(phases, forKey: .phases)
         try c.encode(subtests, forKey: .subtests)
+        try c.encode(diagnoses, forKey: .diagnoses)
         try c.encode(metadata, forKey: .metadata)
     }
 }

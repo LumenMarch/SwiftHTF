@@ -78,6 +78,12 @@ public struct ConsoleOutput: OutputCallback {
                 lines.append(line)
             }
         }
+        if !record.diagnoses.isEmpty {
+            lines.append("Diagnoses:")
+            for d in record.diagnoses {
+                lines.append("  🩺 [\(d.severity.rawValue)] \(d.code): \(d.message)")
+            }
+        }
         lines.append("===================")
         print(lines.joined(separator: "\n"))
     }

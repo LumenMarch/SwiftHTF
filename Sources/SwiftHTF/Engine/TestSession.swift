@@ -187,6 +187,12 @@ public actor TestSession {
             record.outcome = .aborted
         }
 
+        // 测试级诊断：outcome 已定后跑，结果追加到 record.diagnoses（早于 tearDown / outputs）
+        for diagnoser in plan.diagnosers {
+            let diagnoses = await diagnoser.diagnose(record: record)
+            record.diagnoses.append(contentsOf: diagnoses)
+        }
+
         await plugManager.tearDownAll()
         await syncContextBack(into: &record, context: context)
         record.endTime = Date()

@@ -19,7 +19,7 @@ A modern Swift hardware-test framework inspired by [OpenHTF](https://github.com/
 - **Three-state outcome** — `pass` / `marginalPass` / `fail` / `error` / `skip`, with proper "in-spec but near limit" semantics.
 - **Runtime gating with `runIf`** — both `Phase` and `Group` accept a `runIf` closure that reads `ctx.config` / collected state to decide whether to execute.
 - **Measurement repeat** — `repeatOnMeasurementFail` is independent of `retryCount` (which handles thrown exceptions / explicit `.retry`); the two counters never consume each other.
-- **Diagnostics** — `PhaseDiagnoser` runs at terminal `.fail` / `.error`, can read the record and write `ctx.attach` / `ctx.measure` / `ctx.log` for debugging breadcrumbs; `Diagnosis` carries severity / fault code / arbitrary details.
+- **Diagnostics** — `PhaseDiagnoser` runs at terminal `.fail` / `.error`, can read the record and write `ctx.attach` / `ctx.measure` / `ctx.log` for debugging breadcrumbs; `TestDiagnoser` runs once at test wrap-up (outcome already determined, before tear-down) for whole-record post-processing — useful for cross-phase aggregation, multi-rail degradation detection, etc. `Diagnosis` carries severity / fault code / arbitrary details.
 - **Failure routing** — `failureExceptions` whitelist: thrown matching types map to `.fail` (test failure), others stay `.error` (program error).
 - **Attachments** — `ctx.attach(name:data:mimeType:)` / `attachFromFile(_:)`; auto base64 in JSON, summary in Console / CSV.
 - **Per-phase logger** — `ctx.logInfo / logWarning / logError(...)` writes to `PhaseRecord.logs: [LogEntry]` and broadcasts to the event stream in real time; on retry only the last attempt's logs survive.

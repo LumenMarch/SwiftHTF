@@ -14,6 +14,14 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`TestDiagnoser` 测试级诊断**：与 `PhaseDiagnoser` 平级的新协议，对整个
+  `TestRecord` 跑后处理（outcome 已定、tearDown 之前）。
+  - 通过 `TestPlan(name:, diagnosers: [...])` 声明
+  - 不限触发时机，diagnoser 自身按 `record.outcome` 决定是否 emit `Diagnosis`
+  - 结果写入新增字段 `TestRecord.diagnoses: [Diagnosis]`（与
+    `PhaseRecord.diagnoses` 平行；旧 JSON 反序列化为空数组兼容）
+  - `ClosureTestDiagnoser("label") { record in ... }` 便捷类型
+  - `ConsoleOutput` 末尾追加 "Diagnoses:" 段渲染
 - **`PromptPlug` 单次超时**：`requestConfirm` / `requestText` / `requestChoice` /
   底层 `request(kind:)` 全部接受可选 `timeout: TimeInterval?`（默认 nil = 永久等）。
   - 高阶 API 超时映射为默认值（false / "" / -1），与 cancel 行为一致。

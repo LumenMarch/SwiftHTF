@@ -82,3 +82,54 @@ public struct ClosureDiagnoser: PhaseDiagnoser {
         await block(record, context)
     }
 }
+
+// MARK: - 测试级诊断器
+
+/// 测试级诊断器：测试收尾时（outcome 已定、tearDown 之前）调用一次，对整个 `TestRecord` 跑后处理。
+///
+/// 与 `PhaseDiagnoser` 的区别：
+/// - PhaseDiagnoser 绑定到单个 phase 失败终态；TestDiagnoser 绑定到 plan 末尾，跑且仅跑一次
+/// - TestDiagnoser 不限制触发条件——自己读 `record.outcome` 决定要不要 emit Diagnosis
+/// - 只读语义：返回的 Diagnosis 列表追加到 `TestRecord.diagnoses`；不写副作用（无 ctx）
+public protocol TestDiagnoser: Sendable {
+    /// 用于调试 / 输出的简短标签
+    var label: String { get }
+
+    /// 跑测试级诊断；返回的 Diagnosis 列表会追加到 `TestRecord.diagnoses`。
+    func diagnose(record: TestRecord) async -> [Diagnosis]
+}
+
+/// 闭包形式的 TestDiagnoser（轻量定义临时诊断逻辑）
+///
+/// ```swift
+/// TestPlan(
+///     name: "Smoke",
+///     diagnosers: [
+///         ClosureTestDiagnoser("multi-rail-degraded") { record in
+///             let marginalCount = record.phases.filter { $0.outcome == .marginalPass }.count
+///             guard marginalCount >= 3 else { return [] }
+///             return [Diagnosis(
+///                 code: "MULTI_RAIL_DEGRADED",
+///                 severity: .warning,
+///                 message: "\(marginalCount) phases hit marginal band"
+///             )]
+///         }
+///     ]
+/// ) { ... }
+/// ```
+public struct ClosureTestDiagnoser: TestDiagnoser {
+    public let label: String
+    let block: @Sendable (TestRecord) async -> [Diagnosis]
+
+    public init(
+        _ label: String,
+        _ block: @escaping @Sendable (TestRecord) async -> [Diagnosis]
+    ) {
+        self.label = label
+        self.block = block
+    }
+
+    public func diagnose(record: TestRecord) async -> [Diagnosis] {
+        await block(record)
+    }
+}

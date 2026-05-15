@@ -80,6 +80,7 @@ public extension TestPlan {
         setup: [Phase]? = nil,
         teardown: [Phase]? = nil,
         continueOnFail: Bool = false,
+        diagnosers: [any TestDiagnoser] = [],
         @TestPlanBuilder phases: () -> [PhaseNode]
     ) {
         self.init(
@@ -87,7 +88,8 @@ public extension TestPlan {
             nodes: phases(),
             setupNodes: (setup ?? []).map { .phase($0) },
             teardownNodes: (teardown ?? []).map { .phase($0) },
-            continueOnFail: continueOnFail
+            continueOnFail: continueOnFail,
+            diagnosers: diagnosers
         )
     }
 }

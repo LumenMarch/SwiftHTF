@@ -178,6 +178,9 @@ public struct TestPlan: Sendable {
     public let setupNodes: [PhaseNode]
     public let teardownNodes: [PhaseNode]
     public let continueOnFail: Bool
+    /// 测试级诊断器：测试收尾时（outcome 已定、tearDown 之前）依次跑。
+    /// 返回的 Diagnosis 追加到 `TestRecord.diagnoses`。
+    public let diagnosers: [any TestDiagnoser]
 
     /// 主初始化：直接用 PhaseNode 构造（含嵌套 Group）
     public init(
@@ -185,13 +188,15 @@ public struct TestPlan: Sendable {
         nodes: [PhaseNode],
         setupNodes: [PhaseNode] = [],
         teardownNodes: [PhaseNode] = [],
-        continueOnFail: Bool = false
+        continueOnFail: Bool = false,
+        diagnosers: [any TestDiagnoser] = []
     ) {
         self.name = name
         self.nodes = nodes
         self.setupNodes = setupNodes
         self.teardownNodes = teardownNodes
         self.continueOnFail = continueOnFail
+        self.diagnosers = diagnosers
     }
 }
 
