@@ -11,6 +11,7 @@ public actor TestSession {
     private let plugManager: PlugManager
     private let outputCallbacks: [OutputCallback]
     private let initialSerialNumber: String?
+    private let metadata: SessionMetadata
 
     private var runner: Task<TestRecord, Never>?
     private var continuations: [UUID: AsyncStream<TestEvent>.Continuation] = [:]
@@ -25,13 +26,15 @@ public actor TestSession {
         config: TestConfig,
         plugManager: PlugManager,
         outputCallbacks: [OutputCallback],
-        serialNumber: String?
+        serialNumber: String?,
+        metadata: SessionMetadata = SessionMetadata()
     ) {
         self.plan = plan
         self.config = config
         self.plugManager = plugManager
         self.outputCallbacks = outputCallbacks
         initialSerialNumber = serialNumber
+        self.metadata = metadata
     }
 
     // MARK: - 公开 API
@@ -115,6 +118,10 @@ public actor TestSession {
 
     private func runInternal() async -> TestRecord {
         var record = TestRecord(planName: plan.name, serialNumber: initialSerialNumber)
+        record.stationInfo = metadata.stationInfo
+        record.dutInfo = metadata.dutInfo
+        record.codeInfo = metadata.codeInfo
+        record.operatorName = metadata.operatorName
         emit(.testStarted(planName: plan.name, serialNumber: initialSerialNumber))
 
         let resolvedPlugs: [String: any PlugProtocol]

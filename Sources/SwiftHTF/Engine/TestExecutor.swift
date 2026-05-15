@@ -22,6 +22,8 @@ public actor TestExecutor {
     private let plan: TestPlan
     private let outputCallbacks: [OutputCallback]
     private let config: TestConfig
+    /// 站级 / 代码级长期固定元数据。每个 session 默认继承，可在 `startSession` 调用时覆盖。
+    private let defaultMetadata: SessionMetadata
 
     /// 把每次 `register` / `bind` / `swap` 调用打包成"灌入新 PlugManager"的闭包，保留泛型类型信息。
     /// 派生 session 时按顺序回放，确保每个 session 拿到一份独立但配置一致的 PlugManager。
@@ -32,11 +34,13 @@ public actor TestExecutor {
     public init(
         plan: TestPlan,
         config: TestConfig = TestConfig(),
-        outputCallbacks: [OutputCallback] = []
+        outputCallbacks: [OutputCallback] = [],
+        defaultMetadata: SessionMetadata = SessionMetadata()
     ) {
         self.plan = plan
         self.config = config
         self.outputCallbacks = outputCallbacks
+        self.defaultMetadata = defaultMetadata
     }
 
     // MARK: - Plug 注册
@@ -96,17 +100,23 @@ public actor TestExecutor {
 
     /// 创建一个新的测试会话；调用方拿到 session 后可订阅 events / 调 cancel / 等 record。
     /// 每个 session 持有独立 plug 实例。
-    public func startSession(serialNumber: String? = nil) async -> TestSession {
+    /// - Parameter metadata: per-session 元数据，非 nil 字段会覆盖 `defaultMetadata` 同名字段。
+    public func startSession(
+        serialNumber: String? = nil,
+        metadata: SessionMetadata? = nil
+    ) async -> TestSession {
         let mgr = PlugManager()
         for fn in registrationFns {
             await fn(mgr)
         }
+        let merged = defaultMetadata.merging(metadata)
         let session = TestSession(
             plan: plan,
             config: config,
             plugManager: mgr,
             outputCallbacks: outputCallbacks,
-            serialNumber: serialNumber
+            serialNumber: serialNumber,
+            metadata: merged
         )
         activeSessions[session.id] = session
 
@@ -123,9 +133,12 @@ public actor TestExecutor {
     }
 
     /// 单 DUT 便利入口：派生 session、等待 record，一次性返回。
-    /// 多 DUT 并发请改用 `startSession(serialNumber:)`。
-    public func execute(serialNumber: String? = nil) async -> TestRecord {
-        let session = await startSession(serialNumber: serialNumber)
+    /// 多 DUT 并发请改用 `startSession(serialNumber:metadata:)`。
+    public func execute(
+        serialNumber: String? = nil,
+        metadata: SessionMetadata? = nil
+    ) async -> TestRecord {
+        let session = await startSession(serialNumber: serialNumber, metadata: metadata)
         return await session.record()
     }
 

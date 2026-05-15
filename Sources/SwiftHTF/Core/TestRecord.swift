@@ -76,6 +76,15 @@ public struct TestRecord: Sendable, Codable, Identifiable {
     /// 测试级诊断结果（由 `TestPlan.diagnosers` 在测试收尾时产生）。
     /// 旧 JSON 不含此字段时反序列化为空数组。
     public var diagnoses: [Diagnosis]
+    /// 工站元数据（站标识 / 位置 / 主机名）。session 启动时注入，运行中不可变。
+    public var stationInfo: StationInfo?
+    /// DUT 元数据（型号 / 制造日期 / 自定义属性）。session 启动时注入或扫码后回填。
+    public var dutInfo: DUTInfo?
+    /// 代码版本元数据（git hash / build id / environment）。一般由 CI 注入。
+    public var codeInfo: CodeInfo?
+    /// 操作员标识（用户名 / 工号）。
+    public var operatorName: String?
+    /// 用户自定义自由字段。OpenHTF 风格的"任何想留底的字符串"。
     public var metadata: [String: String]
 
     public init(planName: String, serialNumber: String?) {
@@ -88,6 +97,10 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         phases = []
         subtests = []
         diagnoses = []
+        stationInfo = nil
+        dutInfo = nil
+        codeInfo = nil
+        operatorName = nil
         metadata = [:]
     }
 
@@ -102,10 +115,13 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         phases.filter { $0.outcome == .fail || $0.outcome == .error }
     }
 
-    /// 显式 Codable：兼容旧 JSON 中无 subtests / diagnoses 字段
+    /// 显式 Codable：兼容旧 JSON 中无 subtests / diagnoses / stationInfo / dutInfo /
+    /// codeInfo / operatorName 字段
     private enum CodingKeys: String, CodingKey {
         case id, planName, serialNumber, startTime, endTime, outcome
-        case phases, subtests, diagnoses, metadata
+        case phases, subtests, diagnoses
+        case stationInfo, dutInfo, codeInfo, operatorName
+        case metadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -119,6 +135,10 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         phases = try c.decodeIfPresent([PhaseRecord].self, forKey: .phases) ?? []
         subtests = try c.decodeIfPresent([SubtestRecord].self, forKey: .subtests) ?? []
         diagnoses = try c.decodeIfPresent([Diagnosis].self, forKey: .diagnoses) ?? []
+        stationInfo = try c.decodeIfPresent(StationInfo.self, forKey: .stationInfo)
+        dutInfo = try c.decodeIfPresent(DUTInfo.self, forKey: .dutInfo)
+        codeInfo = try c.decodeIfPresent(CodeInfo.self, forKey: .codeInfo)
+        operatorName = try c.decodeIfPresent(String.self, forKey: .operatorName)
         metadata = try c.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
     }
 
@@ -133,6 +153,10 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         try c.encode(phases, forKey: .phases)
         try c.encode(subtests, forKey: .subtests)
         try c.encode(diagnoses, forKey: .diagnoses)
+        try c.encodeIfPresent(stationInfo, forKey: .stationInfo)
+        try c.encodeIfPresent(dutInfo, forKey: .dutInfo)
+        try c.encodeIfPresent(codeInfo, forKey: .codeInfo)
+        try c.encodeIfPresent(operatorName, forKey: .operatorName)
         try c.encode(metadata, forKey: .metadata)
     }
 }

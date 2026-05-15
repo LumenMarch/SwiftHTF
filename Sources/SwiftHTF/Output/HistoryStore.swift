@@ -8,6 +8,10 @@ public struct HistoryQuery: Sendable {
     public var since: Date?
     public var until: Date?
     public var limit: Int?
+    /// 按 station id 过滤（精确匹配 `TestRecord.stationInfo?.stationId`）
+    public var stationId: String?
+    /// 按操作员名过滤（精确匹配 `TestRecord.operatorName`）
+    public var operatorName: String?
     /// 默认按 startTime 倒序（最新在前）
     public var sortDescending: Bool
 
@@ -18,6 +22,8 @@ public struct HistoryQuery: Sendable {
         since: Date? = nil,
         until: Date? = nil,
         limit: Int? = nil,
+        stationId: String? = nil,
+        operatorName: String? = nil,
         sortDescending: Bool = true
     ) {
         self.serialNumber = serialNumber
@@ -26,6 +32,8 @@ public struct HistoryQuery: Sendable {
         self.since = since
         self.until = until
         self.limit = limit
+        self.stationId = stationId
+        self.operatorName = operatorName
         self.sortDescending = sortDescending
     }
 
@@ -44,6 +52,8 @@ public struct HistoryQuery: Sendable {
         if let outcomes, !outcomes.contains(r.outcome) { return false }
         if let since, r.startTime < since { return false }
         if let until, r.startTime > until { return false }
+        if let stationId, r.stationInfo?.stationId != stationId { return false }
+        if let operatorName, r.operatorName != operatorName { return false }
         return true
     }
 }
