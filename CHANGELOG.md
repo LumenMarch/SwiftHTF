@@ -12,8 +12,35 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-15
+
+OpenHTF 对齐 milestone：覆盖 Subtest / Checkpoint / TestDiagnoser /
+ctx.state / Prompt 超时 / TestConfig 多源 / Measurement validators 补全 /
+测试元数据标准字段，对应 OpenHTF 主要剩余特性。
+
 ### Added
 
+- **Measurement validator 补全 + `is_optional`**：与 OpenHTF parity 收尾。
+  - 新增 `oneOf` / `lengthEquals` / `setEquals` 三个 validator
+    （`MeasurementSpec` 链式 API）
+  - `SeriesMeasurementSpec.lengthEquals(N)` 便利方法（== lower=upper=N）
+  - `MeasurementSpec` / `SeriesMeasurementSpec` 新增 `.optional()` 与
+    `isOptional: Bool` 字段。默认 required —— 声明但未 `ctx.measure(...)`
+    会让 phase outcome 降级为 `.fail` 并写入占位 measurement
+    （`validatorMessages = ["missing required measurement"]`）。
+    用 `.optional()` 显式跳过此检查。
+- **测试元数据标准字段**：与 OpenHTF station / DUT / code info 对齐。
+  - 新增 `StationInfo`（stationId / stationName / location / hostName）、
+    `DUTInfo`（serialNumber / partNumber / deviceType / manufactureDate /
+    attributes）、`CodeInfo`（version / gitCommit / buildId / environment）、
+    `SessionMetadata` bundle（含 operatorName）
+  - `TestExecutor.init(plan:config:outputCallbacks:defaultMetadata:)`
+    注入站级 / 代码级长期固定字段；
+    `startSession(serialNumber:metadata:)` / `execute(serialNumber:metadata:)`
+    支持 per-session override（整字段替换语义）
+  - `TestRecord` 新增四个 nullable 顶层字段 `stationInfo` / `dutInfo` /
+    `codeInfo` / `operatorName`；显式 `Codable` 兼容旧 JSON
+  - `HistoryQuery` 新增 `stationId` / `operatorName` 过滤条件
 - **`TestConfig` 多源加载**：与 OpenHTF `Configuration` 对齐的分层配置
   - YAML 文件支持：`TestConfig.load(from: url)` 按扩展名自动识别
     `.json` / `.yaml` / `.yml`；显式 `load(from: data, format: .yaml)`
@@ -84,8 +111,11 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - `TestRecord` / `PhaseRecord` 使用显式 `Codable`，旧 JSON（不含
-  `subtests` / `subtestFailRequested` / `stopRequested`）反序列化时自动
-  填充默认值。
+  `subtests` / `subtestFailRequested` / `stopRequested` / `stationInfo` /
+  `dutInfo` / `codeInfo` / `operatorName`）反序列化时自动填充默认值。
+- **(behavior change)** Measurement 默认从 silent-skip 改为 required：
+  phase 声明 `MeasurementSpec` 但未 `ctx.measure(...)` 现在视为 fail。
+  旧行为通过 `.optional()` 显式恢复。
 - **(source-breaking)** `PromptResponse` 增加 `.timedOut` case：外部代码
   若对 `PromptResponse` 做穷举 `switch` 会编译错；现有 `if case let
   .confirm(b) = response` 模式自动落 else 分支，无影响。
@@ -183,6 +213,7 @@ multi-DUT concurrency, history persistence, and SwiftUI integration.
   enabled across all targets; phase code runs `@MainActor`.
 - 185 unit tests across `SwiftHTFTests` / `SwiftHTFUITests`.
 
-[Unreleased]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/HunterFirefly/SwiftHTF/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HunterFirefly/SwiftHTF/releases/tag/v0.1.0
