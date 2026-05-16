@@ -168,6 +168,7 @@ private struct PhaseRow: View {
         case .fail: "✗"
         case .skip: "⏭"
         case .error: "⚠"
+        case .timeout: "⏱"
         }
     }
 
@@ -175,7 +176,7 @@ private struct PhaseRow: View {
         switch phase.outcome {
         case .pass: .green
         case .marginalPass: .yellow
-        case .fail, .error: .red
+        case .fail, .error, .timeout: .red
         case .skip: .gray
         }
     }
@@ -264,7 +265,7 @@ private struct TraceRow: View {
         case .pass: .green
         case .marginalPass: .yellow
         case .skip: .gray
-        case .fail, .error: .red
+        case .fail, .error, .timeout: .red
         }
     }
 }
@@ -296,7 +297,7 @@ private struct MeasurementRow: View {
         case .pass: "✓"
         case .marginalPass: "≈"
         case .skip: "⏭"
-        case .fail, .error: "✗"
+        case .fail, .error, .timeout: "✗"
         }
     }
 
@@ -305,7 +306,7 @@ private struct MeasurementRow: View {
         case .pass: .green
         case .marginalPass: .yellow
         case .skip: .gray
-        case .fail, .error: .red
+        case .fail, .error, .timeout: .red
         }
     }
 }

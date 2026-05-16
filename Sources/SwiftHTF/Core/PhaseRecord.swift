@@ -8,6 +8,10 @@ public enum PhaseOutcomeType: String, Sendable, Codable {
     case fail = "FAIL"
     case skip = "SKIP"
     case error = "ERROR"
+    /// phase 执行超过 `Phase.timeout` —— 与 `.error` 区分，便于上游决定是否
+    /// 重试或告警。聚合到 `TestRecord.outcome` 时：若所有失败 phase 都是
+    /// `.timeout`，record 标 `.timeout`；混合 fail/error 仍优先 `.fail`。
+    case timeout = "TIMEOUT"
 }
 
 /// 阶段记录
@@ -108,5 +112,13 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
     public var duration: TimeInterval {
         guard let endTime else { return Date().timeIntervalSince(startTime) }
         return endTime.timeIntervalSince(startTime)
+    }
+
+    /// 终态是否为失败族（`.fail / .error / .timeout`），便于聚合层统一短路 / failed 判定。
+    public var isFailing: Bool {
+        switch outcome {
+        case .fail, .error, .timeout: true
+        case .pass, .marginalPass, .skip: false
+        }
     }
 }

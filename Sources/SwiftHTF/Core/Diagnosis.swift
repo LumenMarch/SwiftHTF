@@ -36,7 +36,19 @@ public struct Diagnosis: Sendable, Codable, Identifiable {
     }
 }
 
-/// Phase 诊断器：phase 失败终态时调用。
+/// 诊断器触发时机控制。
+///
+/// 各协议默认值贴近旧行为：
+/// - `PhaseDiagnoser` 默认 `.onlyOnFail`（旧实现就是仅在 phase 失败时跑）
+/// - `TestDiagnoser` 默认 `.always`（旧实现就是无条件跑，用户在闭包内 guard）
+public enum DiagnoserTrigger: String, Sendable, Codable {
+    /// 总是触发（pass / marginalPass / skip 终态也跑），用于 metric / log 类诊断器。
+    case always = "ALWAYS"
+    /// 仅在失败族（`.fail / .error / .timeout`）终态触发。
+    case onlyOnFail = "ONLY_ON_FAIL"
+}
+
+/// Phase 诊断器：按 `trigger` 决定是否在某终态触发。
 ///
 /// 隔离：`@MainActor`。可读 ctx 已收集的状态（先前 phase 的写入），
 /// 也可写 `ctx.attach(...)` / `ctx.measure(...)` 留下调试线索 —— 这些
@@ -46,9 +58,18 @@ public protocol PhaseDiagnoser: Sendable {
     /// 用于调试 / 输出的简短标签
     var label: String { get }
 
+    /// 触发时机；默认实现 `.onlyOnFail`，与既有行为兼容。
+    var trigger: DiagnoserTrigger { get }
+
     /// 跑诊断；返回的 Diagnosis 列表会追加到 PhaseRecord.diagnoses。
     @MainActor
     func diagnose(record: PhaseRecord, context: TestContext) async -> [Diagnosis]
+}
+
+public extension PhaseDiagnoser {
+    var trigger: DiagnoserTrigger {
+        .onlyOnFail
+    }
 }
 
 /// 闭包形式的 PhaseDiagnoser（轻量定义临时诊断逻辑）
@@ -67,13 +88,16 @@ public protocol PhaseDiagnoser: Sendable {
 /// ```
 public struct ClosureDiagnoser: PhaseDiagnoser {
     public let label: String
+    public let trigger: DiagnoserTrigger
     let block: @Sendable @MainActor (PhaseRecord, TestContext) async -> [Diagnosis]
 
     public init(
         _ label: String,
+        trigger: DiagnoserTrigger = .onlyOnFail,
         _ block: @escaping @Sendable @MainActor (PhaseRecord, TestContext) async -> [Diagnosis]
     ) {
         self.label = label
+        self.trigger = trigger
         self.block = block
     }
 
@@ -95,8 +119,28 @@ public protocol TestDiagnoser: Sendable {
     /// 用于调试 / 输出的简短标签
     var label: String { get }
 
+    /// 触发时机；默认 `.onlyOnFail`（仅当 record.outcome 为失败族时跑）。
+    var trigger: DiagnoserTrigger { get }
+
     /// 跑测试级诊断；返回的 Diagnosis 列表会追加到 `TestRecord.diagnoses`。
     func diagnose(record: TestRecord) async -> [Diagnosis]
+}
+
+public extension TestDiagnoser {
+    /// 默认 `.always` —— 与旧实现一致（无条件跑，由闭包自己 guard）。
+    var trigger: DiagnoserTrigger {
+        .always
+    }
+}
+
+extension TestOutcome {
+    /// 失败族判定（聚合层 / 诊断器触发条件用）。
+    var isFailing: Bool {
+        switch self {
+        case .fail, .error, .timeout, .aborted: true
+        case .pass, .marginalPass: false
+        }
+    }
 }
 
 /// 闭包形式的 TestDiagnoser（轻量定义临时诊断逻辑）
@@ -119,13 +163,16 @@ public protocol TestDiagnoser: Sendable {
 /// ```
 public struct ClosureTestDiagnoser: TestDiagnoser {
     public let label: String
+    public let trigger: DiagnoserTrigger
     let block: @Sendable (TestRecord) async -> [Diagnosis]
 
     public init(
         _ label: String,
+        trigger: DiagnoserTrigger = .always,
         _ block: @escaping @Sendable (TestRecord) async -> [Diagnosis]
     ) {
         self.label = label
+        self.trigger = trigger
         self.block = block
     }
 

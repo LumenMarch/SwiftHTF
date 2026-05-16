@@ -110,9 +110,9 @@ public struct TestRecord: Sendable, Codable, Identifiable {
         return endTime.timeIntervalSince(startTime)
     }
 
-    /// 失败的阶段列表
+    /// 失败的阶段列表（含 `.fail / .error / .timeout`）
     public var failedPhases: [PhaseRecord] {
-        phases.filter { $0.outcome == .fail || $0.outcome == .error }
+        phases.filter(\.isFailing)
     }
 
     /// 显式 Codable：兼容旧 JSON 中无 subtests / diagnoses / stationInfo / dutInfo /

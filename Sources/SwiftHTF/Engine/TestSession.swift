@@ -6,9 +6,11 @@ import Foundation
 /// 自己的取消句柄。`record()` 等待 session 完成；`events()` 订阅细粒度事件。
 public actor TestSession {
     public nonisolated let id: UUID = .init()
-    private let plan: TestPlan
-    private let config: TestConfig
-    private let plugManager: PlugManager
+    // 以下 5 个原是 private，因 `TestSessionStages` 在独立文件 extension 中复用而放宽到 internal。
+    // module 内可访问，对包外仍不可见，与 private actor state 的隔离安全等价。
+    let plan: TestPlan
+    let config: TestConfig
+    let plugManager: PlugManager
     private let outputCallbacks: [OutputCallback]
     private let initialSerialNumber: String?
     private let metadata: SessionMetadata
@@ -99,14 +101,14 @@ public actor TestSession {
         continuations.removeValue(forKey: id)
     }
 
-    private func emit(_ event: TestEvent) {
+    func emit(_ event: TestEvent) {
         emittedEvents.append(event)
         for c in continuations.values {
             c.yield(event)
         }
     }
 
-    private func finishStreams() {
+    func finishStreams() {
         streamFinished = true
         for c in continuations.values {
             c.finish()
@@ -124,30 +126,11 @@ public actor TestSession {
         record.operatorName = metadata.operatorName
         emit(.testStarted(planName: plan.name, serialNumber: initialSerialNumber))
 
-        let validation = SessionStartupValidator.validate(config: config)
-        for log in validation.warningLogs {
-            emit(.log(log))
-        }
-        if let reason = validation.failureReason {
-            emit(.log(reason))
-            record.outcome = .error
-            record.endTime = Date()
-            await notifyOutputs(record)
-            emit(.testCompleted(record))
-            finishStreams()
-            return record
+        if let earlyRecord = await runStartupValidation(record: &record) {
+            return earlyRecord
         }
 
-        let resolvedPlugs: [String: any PlugProtocol]
-        do {
-            resolvedPlugs = try await plugManager.setupAll()
-        } catch {
-            emit(.log("Plug setup failed: \(error.localizedDescription)"))
-            record.outcome = .error
-            record.endTime = Date()
-            await notifyOutputs(record)
-            emit(.testCompleted(record))
-            finishStreams()
+        guard let resolvedPlugs = await setupPlugs(record: &record) else {
             return record
         }
 
@@ -157,35 +140,9 @@ public actor TestSession {
             TestContext(serialNumber: serial, resolvedPlugs: resolvedPlugs, config: cfg)
         }
 
-        // 顶层 setup（plan.setupNodes）
-        var earlyExit = false
-        if !plan.setupNodes.isEmpty {
-            let outcome = await runNodes(
-                plan.setupNodes,
-                groupPath: [],
-                continueOnFail: false,
-                into: &record,
-                context: context
-            )
-            if outcome.failed {
-                record.outcome = .fail
-                earlyExit = true
-            }
-            if outcome.aborted { record.outcome = .aborted; earlyExit = true }
-            if outcome.stopped { earlyExit = true }
-        }
-
-        if !earlyExit {
-            let outcome = await runNodes(
-                plan.nodes,
-                groupPath: [],
-                continueOnFail: plan.continueOnFail,
-                into: &record,
-                context: context
-            )
-            if outcome.failed { record.outcome = .fail }
-            if outcome.aborted { record.outcome = .aborted }
-            // .stop 不强制改 outcome（保留已有 pass/fail/marginalPass），仅短路后续
+        let setupExited = await runSetupNodes(into: &record, context: context)
+        if !setupExited {
+            await runMainNodes(into: &record, context: context)
         }
 
         if !plan.teardownNodes.isEmpty {
@@ -198,21 +155,8 @@ public actor TestSession {
             )
         }
 
-        if record.outcome == .pass,
-           record.phases.contains(where: { $0.outcome == .marginalPass })
-        {
-            record.outcome = .marginalPass
-        }
-
-        if Task.isCancelled, record.outcome != .fail {
-            record.outcome = .aborted
-        }
-
-        // 测试级诊断：outcome 已定后跑，结果追加到 record.diagnoses（早于 tearDown / outputs）
-        for diagnoser in plan.diagnosers {
-            let diagnoses = await diagnoser.diagnose(record: record)
-            record.diagnoses.append(contentsOf: diagnoses)
-        }
+        finalizeOutcome(into: &record)
+        await runTestDiagnosers(into: &record)
 
         await plugManager.tearDownAll()
         await syncContextBack(into: &record, context: context)
@@ -228,15 +172,18 @@ public actor TestSession {
         record.serialNumber = sn
     }
 
-    fileprivate struct GroupOutcome {
+    struct GroupOutcome {
         var failed: Bool = false
         var aborted: Bool = false
         /// phase 闭包返回 `.stop` 或检测到致命错误，要求向外冒泡终止整测试。
         /// 与 `aborted`（Task 取消 / unrecoverable）区分，避免 Subtest 隔离失败时误判为取消。
         var stopped: Bool = false
+        /// 至少一个子节点的 phase 终态为 `.timeout`。冒泡到 record 收尾决定是否
+        /// 标 `TestOutcome.timeout`（仅当 record 因 timeout 失败而非 fail/error 时）。
+        var timedOut: Bool = false
     }
 
-    private func runNodes(
+    func runNodes(
         _ nodes: [PhaseNode],
         groupPath: [String],
         continueOnFail: Bool,
@@ -276,6 +223,8 @@ public actor TestSession {
     fileprivate struct PhaseStep {
         var failed: Bool = false
         var stopped: Bool = false
+        /// phase 终态是否为 `.timeout`。冒泡到 record 聚合层决定 TestOutcome 细分。
+        var timedOut: Bool = false
     }
 
     /// 在 runNodes 内跑一个 phase（不修改 outcome 本身，只返回摘要供 caller 决策）。
@@ -299,10 +248,13 @@ public actor TestSession {
         emit(.phaseCompleted(phaseRecord))
         if phaseRecord.stopRequested {
             // .stop 优先冒泡，不被 continueOnFail 吞，也让 subtest 隔离不影响传播
-            return PhaseStep(failed: false, stopped: true)
+            return PhaseStep(failed: false, stopped: true, timedOut: false)
         }
-        let failed = phaseRecord.outcome == .fail || phaseRecord.outcome == .error
-        return PhaseStep(failed: failed, stopped: false)
+        return PhaseStep(
+            failed: phaseRecord.isFailing,
+            stopped: false,
+            timedOut: phaseRecord.outcome == .timeout
+        )
     }
 
     /// 把 PhaseStep 合并进 GroupOutcome；返回是否立即终止 caller 的循环。
@@ -312,6 +264,7 @@ public actor TestSession {
         into outcome: inout GroupOutcome
     ) -> Bool {
         if step.stopped { outcome.stopped = true; return true }
+        if step.timedOut { outcome.timedOut = true }
         if step.failed {
             outcome.failed = true
             return !continueOnFail
@@ -326,6 +279,7 @@ public actor TestSession {
         into outcome: inout GroupOutcome,
         continueOnFail: Bool
     ) -> Bool {
+        if nested.timedOut { outcome.timedOut = true }
         if nested.failed {
             outcome.failed = true
             if !continueOnFail { return true }
@@ -377,7 +331,7 @@ public actor TestSession {
         return await executor.execute(phase: phase)
     }
 
-    private func notifyOutputs(_ record: TestRecord) async {
+    func notifyOutputs(_ record: TestRecord) async {
         for callback in outputCallbacks {
             await callback.save(record: record)
         }
@@ -586,7 +540,7 @@ extension TestSession {
             state.failureReason = "\(phaseRecord.name): failSubtest"
             return
         }
-        if phaseRecord.outcome == .fail || phaseRecord.outcome == .error {
+        if phaseRecord.isFailing {
             state.subtestFailed = true
             let msg = phaseRecord.errorMessage ?? phaseRecord.outcome.rawValue
             state.failureReason = "\(phaseRecord.name): \(msg)"

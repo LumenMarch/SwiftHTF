@@ -12,6 +12,43 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+OpenHTF 对齐三连：phase 级 TIMEOUT outcome、全局 abort（含 SIGINT）、
+OutputToFile 文件名模板、DiagnoserTrigger 控制位。
+
+### Added
+
+- **`PhaseOutcomeType.timeout`**：与 `.fail / .error` 并列的失败族成员
+  - 超时仍消耗 `retryCount` 配额；用尽后 phase 标 `.timeout`
+  - 不被 `failureExceptions` 拐去标 `.fail`（`TestError.timeout` 优先识别）
+  - 聚合：失败 phase 全是 timeout（无 `.fail/.error`）→ `TestRecord.outcome = .timeout`
+- **`Phase.timeout(_:)` 链式修饰符**：与 `.monitor / .withArgs` 风格一致
+  - macOS 13+ 提供 `Duration` 重载（`.seconds(30) / .milliseconds(500)`）
+  - 与 `Phase(timeout:)` init 参数等价
+- **全局 abort 总线 `AbortRegistry`**：把"信号 / 外部触发"扇出到一组 cancel 回调
+  - `TestExecutor.cancel()` 已存在；新增 `bindToAbortRegistry(...)` 把 executor
+    登记到总线，多 executor 共用一次 abort
+  - `TestExecutor.installSIGINTHandler()` 显式 opt-in 安装 Ctrl-C handler
+    （多次调用幂等；SwiftHTF 默认不接管信号表）
+  - Task.isCancelled 优先级覆盖 fail：被 cancel 后 record.outcome 强标 `.aborted`
+- **`OutputFilenameTemplate`**：OpenHTF 风格的文件名占位符
+  - 支持 `{plan}` / `{test_name}` / `{serial}` / `{serial_number}` / `{dut_id}` /
+    `{start_time_millis}` / `{start_time_iso}` / `{outcome}`
+  - 未知 token 保留字面（便于扩展）
+  - `JSONOutput / CSVOutput` 新增 `init(directory:filenameTemplate:)`；
+    无 template 的旧 init 行为不变
+- **`DiagnoserTrigger`**：`.always / .onlyOnFail` 控制诊断器何时触发
+  - `PhaseDiagnoser` / `TestDiagnoser` 协议加 `trigger` 字段；默认值贴近旧行为
+    （Phase 默认 `.onlyOnFail`，Test 默认 `.always`），既有调用零迁移成本
+  - `ClosureDiagnoser / ClosureTestDiagnoser` init 接受 `trigger:` 参数
+
+### Changed
+
+- `PhaseRecord` 新增 `isFailing` 助方法（`.fail / .error / .timeout`），
+  `TestRecord.failedPhases` 顺势扩到含 timeout
+- `TestSession` 中 actor body 拆出 `TestSessionStages.swift` 与
+  `PhaseExecutor` runDiagnosers 拆到 extension —— 保持 SwiftLint 既有阈值
+  不需要抬高（类体 320 行 / 文件 600 行 / 函数体 100 行 / 复杂度 15）
+
 ## [0.3.0] - 2026-05-15
 
 BI / 可视化 / 数据对齐 milestone：补齐 measurement transform、JSON Schema

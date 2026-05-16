@@ -121,6 +121,46 @@ public struct Phase: Identifiable, Sendable {
     }
 }
 
+// MARK: - 链式 timeout 装饰
+
+public extension Phase {
+    /// 链式声明 phase 主体最长允许耗时（秒）。超时后：
+    /// - 仍消耗一次 retry 配额；retry 用尽 → `PhaseRecord.outcome = .timeout`
+    /// - 不命中 `failureExceptions`（timeout 永远归 `.timeout`，不归 `.fail`）
+    /// - 若 phase 含 monitor，timeout 触发前所有已写入采样保留
+    ///
+    /// 与 `Phase(timeout:)` init 参数等价；提供链式版本是为了与
+    /// `.monitor / .withArgs` 风格一致。
+    func timeout(_ seconds: TimeInterval) -> Phase {
+        let newDef = PhaseDefinition(
+            name: definition.name,
+            timeout: seconds,
+            retryCount: definition.retryCount,
+            execute: definition.execute
+        )
+        return Phase(
+            definition: newDef,
+            measurements: measurements,
+            series: series,
+            runIf: runIf,
+            repeatOnMeasurementFail: repeatOnMeasurementFail,
+            diagnosers: diagnosers,
+            failureExceptions: failureExceptions,
+            monitors: monitors,
+            arguments: arguments,
+            plugOverrides: plugOverrides
+        )
+    }
+}
+
+@available(macOS 13, *)
+public extension Phase {
+    /// `Duration` 版本的 `timeout(_:)`：`.seconds(30) / .milliseconds(500)` 风格。
+    func timeout(_ duration: Duration) -> Phase {
+        timeout(duration.asTimeInterval)
+    }
+}
+
 // MARK: - 链式参数化装饰（withArgs / withPlug）
 
 extension Phase {

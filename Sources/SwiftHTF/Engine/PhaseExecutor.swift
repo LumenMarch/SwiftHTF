@@ -40,47 +40,18 @@ public final class PhaseExecutor {
                 log("[\(phase.definition.name)] ---> Repeat (measurement fail \(measurementRepeatsUsed)/\(maxMeasurementRepeats))")
                 continue
             }
-            // 终态：outcome 已定。fail/error 时跑 diagnosers。
-            if record.outcome == .fail || record.outcome == .error,
-               !phase.diagnosers.isEmpty
-            {
-                return await runDiagnosers(record: record, phase: phase)
+            // 终态：outcome 已定。失败族（fail/error/timeout）时按 trigger 过滤跑 diagnosers。
+            let applicable = phase.diagnosers.filter { d in
+                switch d.trigger {
+                case .onlyOnFail: record.isFailing
+                case .always: true
+                }
+            }
+            if !applicable.isEmpty {
+                return await runDiagnosers(record: record, phase: phase, diagnosers: applicable)
             }
             return record
         }
-    }
-
-    /// 跑 phase.diagnosers 并合并副作用（measurement / attachment / trace / logs）进 record。
-    /// diagnoser 写的 measurement / trace 不再跑 spec validation —— 视为辅助调试信息。
-    private func runDiagnosers(record: PhaseRecord, phase: Phase) async -> PhaseRecord {
-        var r = record
-        // 暂时重启 logEmitter，让 diagnoser 内的 ctx.log 也能广播到事件流
-        let stringEmitter = emitLog
-        context.logEmitter = { entry in
-            stringEmitter?("[\(entry.level.rawValue)] \(entry.message)")
-        }
-        for diagnoser in phase.diagnosers {
-            let diagnoses = await diagnoser.diagnose(record: r, context: context)
-            r.diagnoses.append(contentsOf: diagnoses)
-            // diagnoser 副作用：合并新写入的 ctx.measurements / ctx.series / ctx.attachments / ctx.phaseLogs
-            for (name, m) in context.measurements {
-                r.measurements[name] = m
-            }
-            for (name, s) in context.series {
-                r.traces[name] = s
-            }
-            r.attachments.append(contentsOf: context.attachments)
-            r.logs.append(contentsOf: context.phaseLogs)
-            context.measurements = [:]
-            context.series = [:]
-            context.attachments = []
-            context.phaseLogs = []
-            for d in diagnoses {
-                log("[\(phase.definition.name)] ---> Diagnosis (\(d.severity.rawValue)) \(d.code): \(d.message)")
-            }
-        }
-        context.logEmitter = nil
-        return r
     }
 
     private func executeAttempt(phase: Phase) async -> PhaseRecord {
@@ -172,16 +143,30 @@ public final class PhaseExecutor {
                 lastError = error
                 await MonitorScheduler.stop(monitorHandles)
 
+                // Task 取消（外部 abort）：不消耗 retry 配额，直接收尾标 .error
+                // —— 上游 TestSession 看 Task.isCancelled 升级为 .aborted。
+                if error is CancellationError {
+                    phaseRecord.endTime = Date()
+                    phaseRecord.outcome = .error
+                    phaseRecord.errorMessage = "Cancelled"
+                    log("[\(phase.definition.name)] ---> CANCELLED")
+                    return harvest(phaseRecord, phase: phase)
+                }
+
                 if attempts < maxAttempts {
                     log("[\(phase.definition.name)] ---> Retry \(attempts): \(error.localizedDescription)")
                     continue
                 }
 
                 phaseRecord.endTime = Date()
-                let outcome: PhaseOutcomeType = isFailureException(error, phase: phase) ? .fail : .error
+                let outcome = classifyTerminalError(error, phase: phase)
                 phaseRecord.outcome = outcome
                 phaseRecord.errorMessage = error.localizedDescription
-                let label = outcome == .fail ? "FAIL" : "ERROR"
+                let label = switch outcome {
+                case .fail: "FAIL"
+                case .timeout: "TIMEOUT"
+                default: "ERROR"
+                }
                 log("[\(phase.definition.name)] ---> \(label): \(error.localizedDescription)")
                 return harvest(phaseRecord, phase: phase)
             }
@@ -192,13 +177,6 @@ public final class PhaseExecutor {
         phaseRecord.outcome = .error
         phaseRecord.errorMessage = (lastError ?? TestError.unknown("Unknown error")).localizedDescription
         return harvest(phaseRecord, phase: phase)
-    }
-
-    /// phase.failureExceptions 与抛出 error 的精确类型匹配？
-    private nonisolated func isFailureException(_ error: Error, phase: Phase) -> Bool {
-        let errorType = type(of: error)
-        let errorId = ObjectIdentifier(errorType)
-        return phase.failureExceptions.contains { ObjectIdentifier($0) == errorId }
     }
 
     /// harvest 聚合 verdict
@@ -381,5 +359,60 @@ public final class PhaseExecutor {
 
     private func log(_ message: String) {
         emitLog?(message)
+    }
+}
+
+// MARK: - Diagnoser 调用 / 错误分类（拆到 extension 保持类体行数阈值）
+
+extension PhaseExecutor {
+    /// 跑指定 phase.diagnosers 子集并合并副作用（measurement / attachment / trace / logs）进 record。
+    /// diagnoser 写的 measurement / trace 不再跑 spec validation —— 视为辅助调试信息。
+    func runDiagnosers(
+        record: PhaseRecord,
+        phase: Phase,
+        diagnosers: [any PhaseDiagnoser]
+    ) async -> PhaseRecord {
+        var r = record
+        // 暂时重启 logEmitter，让 diagnoser 内的 ctx.log 也能广播到事件流
+        let stringEmitter = emitLog
+        context.logEmitter = { entry in
+            stringEmitter?("[\(entry.level.rawValue)] \(entry.message)")
+        }
+        for diagnoser in diagnosers {
+            let diagnoses = await diagnoser.diagnose(record: r, context: context)
+            r.diagnoses.append(contentsOf: diagnoses)
+            // diagnoser 副作用：合并新写入的 ctx.measurements / ctx.series / ctx.attachments / ctx.phaseLogs
+            for (name, m) in context.measurements {
+                r.measurements[name] = m
+            }
+            for (name, s) in context.series {
+                r.traces[name] = s
+            }
+            r.attachments.append(contentsOf: context.attachments)
+            r.logs.append(contentsOf: context.phaseLogs)
+            context.measurements = [:]
+            context.series = [:]
+            context.attachments = []
+            context.phaseLogs = []
+            for d in diagnoses {
+                log("[\(phase.definition.name)] ---> Diagnosis (\(d.severity.rawValue)) \(d.code): \(d.message)")
+            }
+        }
+        context.logEmitter = nil
+        return r
+    }
+
+    /// phase.failureExceptions 与抛出 error 的精确类型匹配？
+    nonisolated func isFailureException(_ error: Error, phase: Phase) -> Bool {
+        let errorType = type(of: error)
+        let errorId = ObjectIdentifier(errorType)
+        return phase.failureExceptions.contains { ObjectIdentifier($0) == errorId }
+    }
+
+    /// 把"重试用尽后"残留的 error 归类为终态 PhaseOutcome。
+    /// 优先级：`TestError.timeout` → `.timeout`；命中 failureExceptions → `.fail`；其余 → `.error`。
+    nonisolated func classifyTerminalError(_ error: Error, phase: Phase) -> PhaseOutcomeType {
+        if case TestError.timeout = error { return .timeout }
+        return isFailureException(error, phase: phase) ? .fail : .error
     }
 }
