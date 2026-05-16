@@ -6,6 +6,9 @@ import Foundation
 /// 自己的取消句柄。`record()` 等待 session 完成；`events()` 订阅细粒度事件。
 public actor TestSession {
     public nonisolated let id: UUID = .init()
+    /// startup phase 在 `PhaseRecord.groupPath` 里使用的固定前缀；消费者可据此区分启动门控阶段
+    /// 与业务 phase（业务 phase 顶层 groupPath 为空数组 / 含业务 Group 名）。
+    public nonisolated static let startupGroupPath: [String] = ["__startup__"]
     // 以下 5 个原是 private，因 `TestSessionStages` 在独立文件 extension 中复用而放宽到 internal。
     // module 内可访问，对包外仍不可见，与 private actor state 的隔离安全等价。
     let plan: TestPlan
@@ -140,8 +143,12 @@ public actor TestSession {
             TestContext(serialNumber: serial, resolvedPlugs: resolvedPlugs, config: cfg)
         }
 
-        let setupExited = await runSetupNodes(into: &record, context: context)
-        if !setupExited {
+        let startupExited = await runStartupPhase(into: &record, context: context)
+        var setupExited = false
+        if !startupExited {
+            setupExited = await runSetupNodes(into: &record, context: context)
+        }
+        if !startupExited, !setupExited {
             await runMainNodes(into: &record, context: context)
         }
 
@@ -331,7 +338,7 @@ public actor TestSession {
         return r
     }
 
-    private nonisolated func runPhase(_ phase: Phase, context: TestContext) async -> PhaseRecord {
+    nonisolated func runPhase(_ phase: Phase, context: TestContext) async -> PhaseRecord {
         let logEmitter: PhaseExecutor.LogEmitter = { [weak self] msg in
             guard let self else { return }
             Task { await self.emit(.log(msg)) }

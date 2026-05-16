@@ -64,6 +64,8 @@ public final class LiveSeriesChartViewModel: ObservableObject {
         switch event {
         case let .testStarted(name, _):
             planName = name
+        case .serialNumberResolved:
+            break
         case let .phaseCompleted(record):
             mergeTraces(from: record)
         case let .testCompleted(record):

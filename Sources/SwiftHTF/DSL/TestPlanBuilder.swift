@@ -79,8 +79,13 @@ public enum TestPlanBuilder {
 
 public extension TestPlan {
     /// 使用 result builder 构建测试计划（嵌套 Group 友好）
+    ///
+    /// `startup` 是可选的启动门控 phase，跑在 plug `setUp()` 之后、`setup` / 主体 phases 之前。
+    /// 典型用法：用 `PromptPlug` 扫码拿 DUT SN，回填 `ctx.serialNumber` 后再放行业务流程。
+    /// 详细语义见 ``TestPlan/startup``。
     init(
         name: String,
+        startup: Phase? = nil,
         setup: [Phase]? = nil,
         teardown: [Phase]? = nil,
         continueOnFail: Bool = false,
@@ -89,6 +94,7 @@ public extension TestPlan {
     ) {
         self.init(
             name: name,
+            startup: startup,
             nodes: phases(),
             setupNodes: (setup ?? []).map { .phase($0) },
             teardownNodes: (teardown ?? []).map { .phase($0) },

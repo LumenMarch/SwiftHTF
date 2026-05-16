@@ -40,6 +40,48 @@ extension TestSession {
         }
     }
 
+    /// 跑 plan.startup phase（OpenHTF `test_start` 等价物）。跑在 plug setUp 之后、setupNodes 之前。
+    ///
+    /// 返回是否应**跳过** `plan.setupNodes` / `plan.nodes` 主体：
+    /// - 无 startup → 返回 false，主体照跑
+    /// - `runIf` 返回 false → 当作未声明 startup（不写 SkipRecord，不发 serialNumberResolved 事件），
+    ///   返回 false
+    /// - startup 成功（pass / marginalPass）→ 发 `serialNumberResolved(ctx.serialNumber)`，返回 false
+    /// - startup `.stop` → `record.outcome = .aborted`，发事件，返回 true
+    /// - startup `.fail / .error / .timeout` → record 同步对应 outcome，发事件，返回 true
+    ///
+    /// 无论返回 true / false，PhaseRecord 都已写入 `record.phases`，`groupPath = ["__startup__"]`。
+    /// teardownNodes / plug tearDownAll 在 runInternal 末尾照跑，本函数不负责。
+    func runStartupPhase(into record: inout TestRecord, context: TestContext) async -> Bool {
+        guard let startup = plan.startup else { return false }
+
+        if let runIf = startup.runIf, await runIf(context) == false {
+            // 与"未声明 startup"等价：不入 record.phases、不发事件、主体放行
+            return false
+        }
+
+        var phaseRecord = await runPhase(startup, context: context)
+        phaseRecord.groupPath = TestSession.startupGroupPath
+        record.phases.append(phaseRecord)
+        emit(.phaseCompleted(phaseRecord))
+
+        // 同步 startup 内可能改写的 serialNumber 到 record（让 serialNumberResolved 事件携带正确值）
+        let resolvedSN = await MainActor.run { context.serialNumber }
+        record.serialNumber = resolvedSN
+        emit(.serialNumberResolved(resolvedSN))
+
+        if phaseRecord.stopRequested {
+            record.outcome = .aborted
+            return true
+        }
+        if phaseRecord.isFailing {
+            // 与业务 phase 聚合一致：.fail/.error → record .fail；.timeout 单独升级
+            record.outcome = phaseRecord.outcome == .timeout ? .timeout : .fail
+            return true
+        }
+        return false
+    }
+
     /// 跑 plan.setupNodes；返回是否应跳过 plan.nodes 主体（aborted / stopped / setup 失败 → true）。
     func runSetupNodes(into record: inout TestRecord, context: TestContext) async -> Bool {
         guard !plan.setupNodes.isEmpty else { return false }

@@ -3,6 +3,10 @@ import Foundation
 /// 测试执行事件
 public enum TestEvent: Sendable {
     case testStarted(planName: String, serialNumber: String?)
+    /// startup phase 跑完后广播一次（仅当 plan 声明了 `startup` 且未被 runIf 跳过）。
+    /// 携带 startup 跑完后的 `ctx.serialNumber`，UI 可据此刷新标题；序列号未变也会发，
+    /// 让订阅者知道"启动门控阶段已结束"。
+    case serialNumberResolved(String?)
     case phaseCompleted(PhaseRecord)
     case log(String)
     case testCompleted(TestRecord)
@@ -231,6 +235,19 @@ public actor TestExecutor {
 /// 测试计划
 public struct TestPlan: Sendable {
     public let name: String
+    /// 启动门控 phase：跑在 plug `setUp()` 之后、`setupNodes` 之前，可用 plug（典型用例：
+    /// 用 `PromptPlug` 扫码拿 DUT SN 再回填 `ctx.serialNumber`）。语义详见 README "Startup phase"。
+    ///
+    /// - 返回 `.continue` → 放行，进入 `setupNodes` / `nodes`
+    /// - 返回 `.stop` → `TestRecord.outcome = .aborted`，跳过 `setupNodes` / `nodes`，但仍跑
+    ///   `teardownNodes` 与 plug tearDown
+    /// - 返回 `.failAndContinue` / `.fail*` → `outcome = .fail`，跳过主体、跑 teardown
+    /// - 抛非白名单异常 → `outcome = .error`；timeout → `outcome = .timeout`
+    /// - `runIf` 返回 false → 当作未声明 startup，主体照常跑（不写 SkipRecord，不发
+    ///   `serialNumberResolved` 事件）
+    ///
+    /// startup 的 `PhaseRecord` 仍写入 `record.phases`，`groupPath = ["__startup__"]` 便于消费者区分。
+    public let startup: Phase?
     public let nodes: [PhaseNode]
     public let setupNodes: [PhaseNode]
     public let teardownNodes: [PhaseNode]
@@ -246,6 +263,7 @@ public struct TestPlan: Sendable {
     ///
     /// - Parameters:
     ///   - name: 测试计划名（出现在 `TestRecord.planName` / 文件名模板 `{plan}` 等）
+    ///   - startup: 启动门控 phase（可选）；语义见 `startup` 属性文档
     ///   - nodes: 主体节点序列（顶层）
     ///   - setupNodes: 顶层 setup 节点；任一失败 → 跳过主体 + teardown
     ///   - teardownNodes: 顶层 teardown 节点；总是跑（无视主体是否失败）
@@ -253,6 +271,7 @@ public struct TestPlan: Sendable {
     ///   - diagnosers: 测试级诊断器；test 终态确定后按 trigger 过滤触发
     public init(
         name: String,
+        startup: Phase? = nil,
         nodes: [PhaseNode],
         setupNodes: [PhaseNode] = [],
         teardownNodes: [PhaseNode] = [],
@@ -260,6 +279,7 @@ public struct TestPlan: Sendable {
         diagnosers: [any TestDiagnoser] = []
     ) {
         self.name = name
+        self.startup = startup
         self.nodes = nodes
         self.setupNodes = setupNodes
         self.teardownNodes = teardownNodes

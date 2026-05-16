@@ -152,6 +152,7 @@ final class TestExecutorTests: XCTestCase {
             for await event in stream {
                 switch event {
                 case .testStarted: await collector.add("testStarted")
+                case .serialNumberResolved: break
                 case let .phaseCompleted(r): await collector.add("phase:\(r.name)")
                 case .testCompleted: await collector.add("testCompleted")
                 case .log: break

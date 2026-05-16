@@ -12,6 +12,7 @@
 ## 特性
 
 - **声明式测试计划** —— 用 `@resultBuilder` DSL 组合 `Phase`，原生支持 `if` / `for` / `#available` 分支。
+- **启动门控 Phase（OpenHTF `test_start` 等价物）** —— `TestPlan(name:, startup: Phase(...)) { ... }` 注册一个跑在 plug `setUp()` 之后、`setupNodes` 之前的单一门控 phase。典型用例：用 `PromptPlug` 扫码拿 DUT SN，写回 `ctx.serialNumber` 才放行业务流程。返回 `.stop` 整测试 `outcome=.aborted`（teardown 仍跑）；startup 完成后立刻广播一次 `serialNumberResolved(String?)` 事件，SwiftUI 可在 `testCompleted` 之前刷新标题里的 SN。
 - **嵌套 PhaseGroup** —— `Group(name) { ... } setup: { ... } teardown: { ... }` 与 Phase 同级，可任意层级嵌套；group 内 `continueOnFail` 局部生效。
 - **Subtest（可隔离失败单元）** —— `Subtest("name") { ... }` 与 Phase / Group 同级。内部任一 phase 失败 / error / `.failSubtest` 短路剩余节点，但**不传播**到 `TestRecord.outcome`；单独写入 `SubtestRecord`（含 `phaseIDs` 反向引用），供 UI / 输出 sink 单独渲染。
 - **Checkpoint（流程汇合点）** —— `Checkpoint("name")` 与 Phase / Group / Subtest 同级。到达时扫描本作用域已收集的 phase outcomes，若有任一 `.fail` / `.error` 则写入 `PhaseRecord(outcome: .fail)` 并短路剩余兄弟节点（无视 `continueOnFail`）。适合"先把诊断 phase 都跑完拿数据，再决定是否进入耗时的压力测试"模式。作用域是本地的：顶层 checkpoint 只看顶层 phases，group / subtest 内的 checkpoint 只看本作用域。
@@ -33,7 +34,7 @@
 - **历史持久化 (`HistoryStore`)** —— `InMemoryHistoryStore` / `JSONFileHistoryStore`，按 SN / planName / outcome / 时间窗口 / limit 查询；`HistoryOutputCallback` 可作为 `OutputCallback` 自动入库。
 - **连续触发循环 (`TestLoop`)** —— 工厂模式：`trigger` 闭包返回 SN 启动一次 session，结束后回到 trigger 等下一轮；`states()` 状态流方便 SwiftUI 驱动 UI。
 - **严格并发** —— Swift `actor` + `StrictConcurrency`，phase 代码 `@MainActor`，Plug 隔离方式由你决定。
-- **事件流** —— `AsyncStream<TestEvent>`：`testStarted` / `phaseCompleted` / `log` / `testCompleted`。
+- **事件流** —— `AsyncStream<TestEvent>`：`testStarted` / `serialNumberResolved` / `phaseCompleted` / `log` / `testCompleted`。
 - **输出回调** —— 内置 `ConsoleOutput` / `JSONOutput` / `CSVOutput` / `HistoryOutputCallback`，可实现 `OutputCallback` 自定义。
 - **Codable 记录** —— `TestRecord` / `PhaseRecord` / `Measurement` / `SeriesMeasurement` / `Attachment` / `Diagnosis` / `LogEntry` 完整 JSON 往返。
 - **`SwiftHTFUI` 库** —— 现成的 `TestRunnerViewModel` / `PromptCoordinator` / `PromptSheetView`，直接接入 SwiftUI。
@@ -180,6 +181,49 @@ TestPlan(name: "Smoke") {
 | `.skip`            | 跳过                                     |
 | `.stop`            | 立即终止整个测试                         |
 | `.failSubtest`     | 标记 phase 失败并短路所在 Subtest（不在 Subtest 内时等价 `.failAndContinue`） |
+
+### 启动门控 Phase（OpenHTF `test_start` 等价物）
+
+很多 plan 需要在主体开跑前先做一道闸：扫码拿 DUT SN、确认治具就位、license 校验等。这类逻辑放在 `TestPlan.startup`：
+
+```swift
+TestPlan(
+    name: "DemoBoard",
+    startup: Phase(name: "ScanSN") { @MainActor ctx in
+        let prompt = ctx.getPlug(PromptPlug.self)
+        guard let sn = await prompt.requestText("Scan DUT SN", timeout: 60)
+        else { return .stop }                              // 操作员取消
+        ctx.serialNumber = sn                              // 回填 record.serialNumber
+        return .continue
+    }
+) {
+    Phase(name: "PowerOn") { _ in .continue }
+    Group("RFTests") { ... }
+} teardown: [
+    Phase(name: "PowerOff") { _ in .continue }
+]
+```
+
+生命周期位置：plug `setUp()` → **startup** → `setupNodes` → `nodes` → `teardownNodes` → plug `tearDown()`。
+
+返回值映射（PhaseRecord ↔ TestRecord）：
+
+| Startup 返回值          | `PhaseRecord.outcome` | `TestRecord.outcome` | 跑主体？ | 跑 teardown？ |
+|-------------------------|-----------------------|----------------------|----------|---------------|
+| `.continue`             | `.pass`               | （不变）             | 是       | 是            |
+| `.stop`                 | `.pass`*              | `.aborted`           | 否       | 是            |
+| `.failAndContinue`      | `.fail`               | `.fail`              | 否       | 是            |
+| 抛非白名单异常          | `.error`              | `.fail`              | 否       | 是            |
+| 超时                    | `.timeout`            | `.timeout`           | 否       | 是            |
+| `runIf` 返回 `false`    | （不写 PhaseRecord）  | （不变）             | 是       | 是            |
+
+\* `.stop` 是控制流信号，不是失败 —— `PhaseRecord` 保留其计算出的 outcome（通常 `.pass`），由 `stopRequested = true` 触发 `.aborted` 映射。
+
+其他要点：
+- Startup `PhaseRecord` 仍写入 `record.phases`，`groupPath = TestSession.startupGroupPath`（即 `["__startup__"]`），UI / sink 可据此区分启动门控阶段与业务 phase。
+- Plug `tearDown()` 总会跑（无论 startup outcome 如何）。
+- Startup 跑完后立刻广播一次 `TestEvent.serialNumberResolved(ctx.serialNumber)`（`runIf` 跳过时不发）；`SwiftHTFUI.TestRunnerViewModel` 已对接该事件，操作员扫码完成的瞬间 UI 标题里的 SN 就会刷新，不必等 `testCompleted`。
+- Startup 继承完整 `Phase` 字段：`timeout` / `retryCount` / `measurements` / `series` / `diagnosers` / `failureExceptions` / `runIf` / `repeatOnMeasurementFail`。
 
 ### Subtest（可隔离失败单元）
 

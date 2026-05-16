@@ -12,6 +12,7 @@ A modern Swift hardware-test framework inspired by [OpenHTF](https://github.com/
 ## Features
 
 - **Declarative test plans** — compose `Phase`s with a `@resultBuilder` DSL, including `if` / `for` / availability branches.
+- **Startup phase (OpenHTF `test_start` equivalent)** — `TestPlan(name:, startup: Phase(...)) { ... }` runs a single gating phase *after* plug `setUp()` but *before* `setupNodes`. Typical use: scan barcode via `PromptPlug`, write `ctx.serialNumber`, then let the main flow proceed. Returning `.stop` aborts the whole test (`outcome = .aborted`) while still running `teardownNodes` / plug tearDown. A `serialNumberResolved(String?)` event fires once startup finishes so SwiftUI can refresh titles before `testCompleted`.
 - **Nested PhaseGroup** — `Group(name) { ... } setup: { ... } teardown: { ... }` sits alongside `Phase` and nests freely; `continueOnFail` is local to each group.
 - **Subtest (isolated-failure unit)** — `Subtest("name") { ... }` sits alongside `Phase` / `Group`. Any phase fail / error / `.failSubtest` short-circuits the remaining nodes, but **does not propagate** to `TestRecord.outcome`. A separate `SubtestRecord` (with `phaseIDs` back-references) is emitted for UI / sinks.
 - **Checkpoint (sequence merge point)** — `Checkpoint("name")` sits alongside `Phase` / `Group` / `Subtest`. When reached, scans the local scope's phase outcomes; if any `.fail` / `.error` is found, writes a `PhaseRecord(outcome: .fail)` and short-circuits the remaining siblings (ignores `continueOnFail`). Useful for "collect data first, then decide whether to run expensive stress tests" patterns. Scope is local: top-level checkpoint sees only top-level phases, group/subtest checkpoints see only their own scope.
@@ -33,7 +34,7 @@ A modern Swift hardware-test framework inspired by [OpenHTF](https://github.com/
 - **History persistence (`HistoryStore`)** — `InMemoryHistoryStore` / `JSONFileHistoryStore`; query by SN / planName / outcome / time window / limit. `HistoryOutputCallback` plugs in as an `OutputCallback` for automatic ingest.
 - **Continuous trigger loop (`TestLoop`)** — factory pattern: `trigger` returns a serial number to start one session, then waits again on completion; `states()` exposes a state stream for SwiftUI.
 - **Strict concurrency** — Swift `actor` + `StrictConcurrency`, phase code is `@MainActor`, plug isolation is your call.
-- **Event stream** — `AsyncStream<TestEvent>`: `testStarted` / `phaseCompleted` / `log` / `testCompleted`.
+- **Event stream** — `AsyncStream<TestEvent>`: `testStarted` / `serialNumberResolved` / `phaseCompleted` / `log` / `testCompleted`.
 - **Output sinks** — `ConsoleOutput` / `JSONOutput` / `CSVOutput` / `HistoryOutputCallback` built in; implement `OutputCallback` for anything else.
 - **Codable records** — `TestRecord` / `PhaseRecord` / `Measurement` / `SeriesMeasurement` / `Attachment` / `Diagnosis` / `LogEntry` round-trip JSON.
 - **`SwiftHTFUI`** — ready-made `TestRunnerViewModel` / `PromptCoordinator` / `PromptSheetView` for SwiftUI.
@@ -180,6 +181,49 @@ Each phase closure returns a `PhaseResult`:
 | `.skip`           | Skip without running                                 |
 | `.stop`           | Abort the whole test                                 |
 | `.failSubtest`    | Mark phase fail and short-circuit enclosing Subtest (equivalent to `.failAndContinue` when not in a Subtest) |
+
+### Startup phase (OpenHTF `test_start` equivalent)
+
+Plans often need to gate the whole run on something — scan a barcode to learn the DUT's serial number, confirm a fixture is in place, or refuse to proceed if a license check fails. Put that logic in `TestPlan.startup`:
+
+```swift
+TestPlan(
+    name: "DemoBoard",
+    startup: Phase(name: "ScanSN") { @MainActor ctx in
+        let prompt = ctx.getPlug(PromptPlug.self)
+        guard let sn = await prompt.requestText("Scan DUT SN", timeout: 60)
+        else { return .stop }                              // operator cancelled
+        ctx.serialNumber = sn                              // back-fill record.serialNumber
+        return .continue
+    }
+) {
+    Phase(name: "PowerOn") { _ in .continue }
+    Group("RFTests") { ... }
+} teardown: [
+    Phase(name: "PowerOff") { _ in .continue }
+]
+```
+
+Lifecycle position: plug `setUp()` → **startup** → `setupNodes` → `nodes` → `teardownNodes` → plug `tearDown()`.
+
+Outcome mapping (PhaseRecord vs TestRecord):
+
+| Startup `PhaseResult`   | `PhaseRecord.outcome` | `TestRecord.outcome` | Main body runs? | Teardown runs? |
+|-------------------------|-----------------------|----------------------|-----------------|----------------|
+| `.continue`             | `.pass`               | (unchanged)          | yes             | yes            |
+| `.stop`                 | `.pass`*              | `.aborted`           | no              | yes            |
+| `.failAndContinue`      | `.fail`               | `.fail`              | no              | yes            |
+| thrown (non-whitelist)  | `.error`              | `.fail`              | no              | yes            |
+| timed out               | `.timeout`            | `.timeout`           | no              | yes            |
+| `runIf` returns `false` | (no record written)   | (unchanged)          | yes             | yes            |
+
+\* `.stop` is a control-flow signal, not a failure — the `PhaseRecord` keeps its computed outcome (typically `.pass`) and `stopRequested = true` triggers the `.aborted` mapping.
+
+Other notes:
+- Startup `PhaseRecord` is appended to `record.phases` with `groupPath = TestSession.startupGroupPath` (`["__startup__"]`) so UI / sinks can tell startup apart from business phases.
+- Plug `tearDown()` always runs (regardless of startup outcome).
+- A `TestEvent.serialNumberResolved(ctx.serialNumber)` is broadcast immediately after startup completes (unless skipped by `runIf`). `SwiftHTFUI.TestRunnerViewModel` already wires this so the title refreshes the moment the operator finishes scanning, well before `testCompleted`.
+- Startup inherits the full `Phase` feature set: `timeout`, `retryCount`, `measurements`, `series`, `diagnosers`, `failureExceptions`, `runIf`, `repeatOnMeasurementFail`.
 
 ### Subtest (isolated-failure unit)
 

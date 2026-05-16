@@ -12,6 +12,21 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`TestPlan.startup`（OpenHTF `test_start` 等价物）**：可选的启动门控 phase，
+  跑在 plug `setUp()` 之后、`setupNodes` 之前；典型用例是用 `PromptPlug` 扫码拿
+  DUT SN 再回填 `ctx.serialNumber` 才正式放行业务流程。
+  - 返回 `.continue` → 进入主体；`.stop` → `record.outcome = .aborted`；
+    `.fail*` / 抛异常 → `record.outcome = .fail`；超时 → `.timeout`。
+  - `runIf` 返回 false → 当作未声明 startup（不写 SkipRecord、不发事件）。
+  - PhaseRecord 仍写入 `record.phases`，`groupPath = ["__startup__"]`
+    （通过 `TestSession.startupGroupPath` 常量暴露）。
+  - 任意终态都跑 `teardownNodes` 与 plug tearDown。
+- **`TestEvent.serialNumberResolved(String?)`** 事件：startup 跑完后广播一次
+  （仅当 plan 声明了 `startup` 且未被 runIf 跳过），UI 据此立刻刷新标题里的 SN，
+  不必等 `testCompleted`。`SwiftHTFUI.TestRunnerViewModel` 已对接该事件。
+
 清理跨版本兼容代码：移除"旧 JSON 反序列化"与"旧 API 重载"两类兼容路径，
 **保留** macOS 12 / iOS 15 系统旧版本兼容（CustomLineChart fallback、`@available(macOS 13)`
 重载、`MonitorScheduler` 双实现等）。

@@ -56,6 +56,9 @@ public final class TestRunnerViewModel: ObservableObject {
                     case let .testStarted(name, sn):
                         planName = name
                         self.serialNumber = sn
+                    case let .serialNumberResolved(sn):
+                        // startup 完成后 UI 立刻刷新标题里的 SN（不必等整测试完成）
+                        self.serialNumber = sn
                     case let .phaseCompleted(r):
                         phases.append(r)
                     case let .log(msg):

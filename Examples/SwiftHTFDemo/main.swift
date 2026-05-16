@@ -195,6 +195,8 @@ func run() async {
             switch event {
             case let .testStarted(name, sn):
                 print("[event] testStarted plan=\(name) sn=\(sn ?? "-")")
+            case let .serialNumberResolved(sn):
+                print("[event] serialNumberResolved sn=\(sn ?? "-")")
             case let .phaseCompleted(r):
                 print("[event] phase \(r.name) -> \(r.outcome.rawValue) (\(String(format: "%.2f", r.duration))s)")
             case let .log(msg):
