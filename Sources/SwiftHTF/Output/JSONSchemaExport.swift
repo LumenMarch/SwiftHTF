@@ -36,9 +36,11 @@ public extension TestPlan {
     /// 直接拿到 schema 的 `AnyCodableValue` 树，方便嵌入其它结构 / 单元测试。
     func exportSchemaObject() -> AnyCodableValue {
         var properties: [String: AnyCodableValue] = [:]
+        var phaseArguments: [AnyCodableValue] = []
         let allNodes = setupNodes + nodes + teardownNodes
         for node in allNodes {
             collectSchemaProperties(node: node, into: &properties)
+            collectPhaseArguments(node: node, into: &phaseArguments)
         }
         var schema: [String: AnyCodableValue] = [
             "$schema": .string("http://json-schema.org/draft-07/schema#"),
@@ -48,12 +50,44 @@ public extension TestPlan {
         ]
         // 显式声明本 schema 由 SwiftHTF 生成，便于 BI 识别
         schema["x-swifthtf-version"] = .string("0.3.0")
+        if !phaseArguments.isEmpty {
+            schema["x-swifthtf-arguments"] = .array(phaseArguments)
+        }
         return .object(schema)
+    }
+}
+
+/// 收集每个 phase 的 `arguments` 快照成 `{ phase, arguments }` 数组，
+/// 写入 `x-swifthtf-arguments`。BI / 看板可据此列出参数化变体。
+private func collectPhaseArguments(
+    node: PhaseNode,
+    into accumulator: inout [AnyCodableValue]
+) {
+    switch node {
+    case let .phase(p):
+        guard !p.arguments.isEmpty else { return }
+        accumulator.append(.object([
+            "phase": .string(p.definition.name),
+            "arguments": .object(p.arguments),
+        ]))
+    case let .group(g):
+        let all = g.setup + g.children + g.teardown
+        for child in all {
+            collectPhaseArguments(node: child, into: &accumulator)
+        }
+    case let .subtest(s):
+        for child in s.nodes {
+            collectPhaseArguments(node: child, into: &accumulator)
+        }
+    case .checkpoint:
+        break
     }
 }
 
 /// 递归提取 PhaseNode 下所有 MeasurementSpec / SeriesMeasurementSpec
 /// 并写入 properties。同名 spec 由后定义覆盖（与运行时 harvest 一致）。
+/// 同时把每个 phase 的参数化输入（`Phase.arguments`）汇总到 x-swifthtf-arguments
+/// 顶级数组里，方便 BI 看"哪些参数化变体存在"。
 private func collectSchemaProperties(
     node: PhaseNode,
     into properties: inout [String: AnyCodableValue]

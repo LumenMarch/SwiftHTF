@@ -1,6 +1,6 @@
 # SwiftHTF
 
-[![CI](https://github.com/HunterFirefly/SwiftHTF/actions/workflows/ci.yml/badge.svg)](https://github.com/HunterFirefly/SwiftHTF/actions/workflows/ci.yml)
+[![CI](https://github.com/LumenMarch/SwiftHTF/actions/workflows/ci.yml/badge.svg)](https://github.com/LumenMarch/SwiftHTF/actions/workflows/ci.yml)
 [![Swift 5.9+](https://img.shields.io/badge/Swift-5.9%2B-orange.svg)](https://swift.org)
 [![Platforms](https://img.shields.io/badge/Platforms-macOS%2012%2B-blue.svg)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -49,7 +49,7 @@ Add SwiftHTF to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/HunterFirefly/SwiftHTF.git", from: "0.3.0")
+    .package(url: "https://github.com/LumenMarch/SwiftHTF.git", from: "0.3.0")
 ],
 targets: [
     .target(
@@ -569,4 +569,4 @@ swift test          # 185 tests
 
 ## License
 
-[MIT](LICENSE) © 2026 HunterFirefly
+[MIT](LICENSE) © 2026 LumenMarch

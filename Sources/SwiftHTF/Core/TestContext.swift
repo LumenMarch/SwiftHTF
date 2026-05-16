@@ -35,6 +35,21 @@ public final class TestContext {
     /// 闭包之外（包括 phase harvest 之后）保持 nil。
     var logEmitter: (@Sendable (LogEntry) -> Void)?
 
+    /// 当前 phase 的参数字典（由 `Phase.withArgs(...)` 声明，PhaseExecutor 在
+    /// attempt 起始注入；harvest 之后保持上一个 phase 的值，下一个 phase 起始
+    /// 时再被覆盖）。phase 闭包内通过 `ctx.args` 视图读取。
+    var arguments: [String: AnyCodableValue] = [:]
+
+    /// 当前 phase 的参数视图。每次访问返回值类型快照。
+    public var args: PhaseArguments {
+        PhaseArguments(arguments)
+    }
+
+    /// 当前 phase 的 plug 重定向表（key / value 均为 `String(describing: Type)`）。
+    /// 由 `Phase.withPlug(_:replacedWith:)` 声明、PhaseExecutor 注入；`getPlug`
+    /// 解析时先查此表，命中则用重定向后的 key 取实例。
+    var plugOverrides: [String: String] = [:]
+
     /// 已解析的 Plug 实例字典（按类型名索引）
     private let resolvedPlugs: [String: any PlugProtocol]
 
@@ -178,11 +193,26 @@ public final class TestContext {
 
     // MARK: - Plug
 
-    /// 获取已注册的 Plug 实例
-    /// - Note: 必须在 TestExecutor 初始化后通过 `register(_:)` 或 `register(_:factory:)` 登记过
+    /// 获取已注册的 Plug 实例。
+    ///
+    /// 解析顺序：
+    /// 1. 若当前 phase 通过 `Phase.withPlug(_:replacedWith:)` 声明了重定向，
+    ///    则按重定向后的类型查 `resolvedPlugs`，并强制转回查询时声明的 `T`
+    ///    （要求 mock 与 real 共享 `T` 一致的 API，例如继承同一基类 / 实现同一 protocol）
+    /// 2. 否则按原类型查
+    ///
+    /// - Note: 必须在 TestExecutor 初始化后通过 `register(_:)` / `register(_:factory:)`
+    ///   登记过。被重定向的目标类型同样必须已注册。
     public func getPlug<T: PlugProtocol>(_ type: T.Type) -> T {
         let key = String(describing: type)
-        guard let plug = resolvedPlugs[key] as? T else {
+        let resolvedKey = plugOverrides[key] ?? key
+        guard let plug = resolvedPlugs[resolvedKey] as? T else {
+            if resolvedKey != key {
+                fatalError(
+                    "Plug override target \"\(resolvedKey)\" for \"\(key)\" is not "
+                        + "registered (or does not conform to \(T.self))"
+                )
+            }
             fatalError("Plug \(key) is not registered with the TestExecutor")
         }
         return plug

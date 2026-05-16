@@ -124,6 +124,20 @@ public actor TestSession {
         record.operatorName = metadata.operatorName
         emit(.testStarted(planName: plan.name, serialNumber: initialSerialNumber))
 
+        let validation = SessionStartupValidator.validate(config: config)
+        for log in validation.warningLogs {
+            emit(.log(log))
+        }
+        if let reason = validation.failureReason {
+            emit(.log(reason))
+            record.outcome = .error
+            record.endTime = Date()
+            await notifyOutputs(record)
+            emit(.testCompleted(record))
+            finishStreams()
+            return record
+        }
+
         let resolvedPlugs: [String: any PlugProtocol]
         do {
             resolvedPlugs = try await plugManager.setupAll()

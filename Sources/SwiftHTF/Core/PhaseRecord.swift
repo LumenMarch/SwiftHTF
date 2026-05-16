@@ -34,6 +34,10 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
     /// phase 闭包返回 `.stop` 时由 PhaseExecutor 置为 true。
     /// TestSession 据此向外冒泡 GroupOutcome.stopped，不被 Subtest 的失败隔离吞掉。
     public var stopRequested: Bool
+    /// 参数化 phase 的运行时参数快照（由 `Phase.withArgs(...)` 设定）。
+    /// `ctx.args.string(...) / .double(...) / .value(_:as:)` 读取的同一份字典。
+    /// 旧 JSON 反序列化时缺字段则为空 dict。
+    public var arguments: [String: AnyCodableValue]
 
     public init(name: String) {
         id = UUID()
@@ -50,6 +54,7 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
         logs = []
         subtestFailRequested = false
         stopRequested = false
+        arguments = [:]
     }
 
     /// 显式 Codable：兼容旧 JSON 中无新增字段
@@ -58,6 +63,7 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
         case measurements, traces, attachments, errorMessage
         case groupPath, diagnoses, logs
         case subtestFailRequested, stopRequested
+        case arguments
     }
 
     public init(from decoder: Decoder) throws {
@@ -76,6 +82,7 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
         logs = try c.decodeIfPresent([LogEntry].self, forKey: .logs) ?? []
         subtestFailRequested = try c.decodeIfPresent(Bool.self, forKey: .subtestFailRequested) ?? false
         stopRequested = try c.decodeIfPresent(Bool.self, forKey: .stopRequested) ?? false
+        arguments = try c.decodeIfPresent([String: AnyCodableValue].self, forKey: .arguments) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -94,6 +101,7 @@ public struct PhaseRecord: Sendable, Codable, Identifiable {
         try c.encode(logs, forKey: .logs)
         try c.encode(subtestFailRequested, forKey: .subtestFailRequested)
         try c.encode(stopRequested, forKey: .stopRequested)
+        try c.encode(arguments, forKey: .arguments)
     }
 
     /// 阶段持续时间

@@ -92,6 +92,11 @@ public final class PhaseExecutor {
             uniqueKeysWithValues: phase.series.map { ($0.name, $0) }
         )
 
+        // 注入参数化运行时态：args（withArgs 声明）+ plug 重定向（withPlug 声明）。
+        // 在 attempt 之间 / harvest 末尾会被清空。
+        context.arguments = phase.arguments
+        context.plugOverrides = phase.plugOverrides
+
         // 注入 phase logger emitter，让 ctx.log 既写 phaseLogs 又广播到事件流
         let stringEmitter = emitLog
         context.logEmitter = { entry in
@@ -108,8 +113,13 @@ public final class PhaseExecutor {
             // 由 harvest 末尾清空；logs 用 retry 维度重置以反映最后一次 attempt 的实际日志）
             context.phaseLogs = []
 
+            // 启动 monitor 后台任务（与 Phase 主体生命周期对齐：本次 attempt 起始挂起，
+            // attempt 结束前回收）。每次 attempt 重启，确保 retry / repeat 不串行采样。
+            let monitorHandles = MonitorScheduler.start(phase: phase, context: context)
+
             do {
                 let result = try await executeWithTimeout(phase: phase, context: context)
+                await MonitorScheduler.stop(monitorHandles)
 
                 switch result {
                 case .continue:
@@ -160,6 +170,7 @@ public final class PhaseExecutor {
 
             } catch {
                 lastError = error
+                await MonitorScheduler.stop(monitorHandles)
 
                 if attempts < maxAttempts {
                     log("[\(phase.definition.name)] ---> Retry \(attempts): \(error.localizedDescription)")
@@ -209,10 +220,13 @@ public final class PhaseExecutor {
 
         r.attachments = context.attachments
         r.logs = context.phaseLogs
+        r.arguments = context.arguments
         context.measurements = [:]
         context.series = [:]
         context.attachments = []
         context.phaseLogs = []
+        context.arguments = [:]
+        context.plugOverrides = [:]
         context.logEmitter = nil
 
         // 仅当 phase 当前还是 pass 时升级（不覆盖 .skip/.error/.fail）

@@ -23,9 +23,17 @@ import Yams
 /// ```
 public struct TestConfig: Sendable {
     public private(set) var values: [String: AnyCodableValue]
+    /// 可选的声明 schema（由 `TestExecutor(plan:config:configSchema:)` 注入）。
+    /// 携带 schema 的 TestConfig 在 phase 内通过 ctx.config 读取时会按 strictness
+    /// 触发未声明 key 的 warning / strict fatal。
+    public internal(set) var schema: ConfigSchema?
+    /// 未声明 key 读取时的回调（默认 nil；TestExecutor 启动时注入，输出到 stderr）。
+    /// 闭包形式让用户在外部捕获（测试 / 自定义日志路由）。
+    var undeclaredKeyHandler: (@Sendable (String) -> Void)?
 
-    public init(values: [String: AnyCodableValue] = [:]) {
+    public init(values: [String: AnyCodableValue] = [:], schema: ConfigSchema? = nil) {
         self.values = values
+        self.schema = schema
     }
 
     // MARK: - 文件 / 数据加载
@@ -77,16 +85,18 @@ public struct TestConfig: Sendable {
     // MARK: - 取值
 
     public subscript(key: String) -> AnyCodableValue? {
-        values[key]
+        checkDeclared(key)
+        return values[key]
     }
 
-    /// 是否包含某 key
+    /// 是否包含某 key。不触发 declared 检查（containment query 不算"使用"）。
     public func contains(_ key: String) -> Bool {
         values[key] != nil
     }
 
     /// 解码到任意 Decodable 类型（通过 JSON 中转）
     public func value<T: Decodable>(_ key: String, as _: T.Type) -> T? {
+        checkDeclared(key)
         guard let raw = values[key] else { return nil }
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(raw) else { return nil }
@@ -97,25 +107,47 @@ public struct TestConfig: Sendable {
     // MARK: - 便利访问器
 
     public func string(_ key: String) -> String? {
-        values[key]?.asString
+        checkDeclared(key)
+        return values[key]?.asString
     }
 
     public func int(_ key: String) -> Int? {
-        values[key]?.asInt
+        checkDeclared(key)
+        return values[key]?.asInt
     }
 
     public func double(_ key: String) -> Double? {
-        values[key]?.asDouble
+        checkDeclared(key)
+        return values[key]?.asDouble
     }
 
     public func bool(_ key: String) -> Bool? {
-        values[key]?.asBool
+        checkDeclared(key)
+        return values[key]?.asBool
     }
 
     /// 数组（每项尝试转 T；无法转的项以 nil 占位被过滤）
     public func array<T>(_ key: String, as transform: (AnyCodableValue) -> T?) -> [T]? {
+        checkDeclared(key)
         guard case let .array(arr) = values[key] else { return nil }
         return arr.compactMap(transform)
+    }
+
+    // MARK: - 声明校验
+
+    /// 任一访问器路径都会调用此函数，按 schema.strictness 决定行为：
+    /// - 无 schema / `.lax`：静默放行
+    /// - `.warn`：调 undeclaredKeyHandler（默认 stderr）；不影响返回值
+    /// - `.strict`：fatalError（约束应被启动时一次性扫描提前发现，这里是兜底）
+    private func checkDeclared(_ key: String) {
+        guard let schema, !schema.isDeclared(key) else { return }
+        switch schema.strictness {
+        case .lax: break
+        case .warn:
+            undeclaredKeyHandler?(key)
+        case .strict:
+            fatalError("strict ConfigSchema: undeclared config key '\(key)'")
+        }
     }
 
     // MARK: - 多源加载
@@ -174,13 +206,26 @@ public struct TestConfig: Sendable {
     }
 
     /// 合并：返回新 TestConfig，`override` 中的 key 覆盖本实例同名 key。
+    /// schema 与 undeclaredKeyHandler 保留本实例的（合并不携带 schema 元数据）；
     /// 典型链路：`defaults.merging(file).merging(env).merging(cli)`（后者优先级高）
     public func merging(_ override: TestConfig) -> TestConfig {
         var merged = values
         for (k, v) in override.values {
             merged[k] = v
         }
-        return TestConfig(values: merged)
+        var result = TestConfig(values: merged, schema: schema)
+        result.undeclaredKeyHandler = undeclaredKeyHandler
+        return result
+    }
+
+    /// 用同一份 values 复制一份并注入 schema + handler。executor 启动时使用。
+    func attaching(
+        schema: ConfigSchema,
+        undeclaredKeyHandler: @Sendable @escaping (String) -> Void
+    ) -> TestConfig {
+        var result = TestConfig(values: values, schema: schema)
+        result.undeclaredKeyHandler = undeclaredKeyHandler
+        return result
     }
 }
 

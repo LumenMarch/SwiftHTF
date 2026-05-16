@@ -34,13 +34,30 @@ public actor TestExecutor {
     public init(
         plan: TestPlan,
         config: TestConfig = TestConfig(),
+        configSchema: ConfigSchema? = nil,
         outputCallbacks: [OutputCallback] = [],
-        defaultMetadata: SessionMetadata = SessionMetadata()
+        defaultMetadata: SessionMetadata = SessionMetadata(),
+        undeclaredKeyHandler: (@Sendable (String) -> Void)? = nil
     ) {
         self.plan = plan
-        self.config = config
         self.outputCallbacks = outputCallbacks
         self.defaultMetadata = defaultMetadata
+        if let schema = configSchema {
+            // defaults 作为最低优先级 base；用户传入 config 覆盖；最后挂上 schema + handler
+            let handler = undeclaredKeyHandler ?? Self.defaultUndeclaredKeyHandler
+            let merged = schema.defaultsConfig().merging(config)
+            self.config = merged.attaching(schema: schema, undeclaredKeyHandler: handler)
+        } else {
+            self.config = config
+        }
+    }
+
+    /// 默认未声明 key 处理：写一行到 stderr。
+    private static let defaultUndeclaredKeyHandler: @Sendable (String) -> Void = { key in
+        let line = "[SwiftHTF] warning: undeclared config key '\(key)' read\n"
+        if let data = line.data(using: .utf8) {
+            FileHandle.standardError.write(data)
+        }
     }
 
     // MARK: - Plug 注册
