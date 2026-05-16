@@ -12,6 +12,31 @@ format and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+`SwiftHTFCharts`：新增可选 UI product，把 `SeriesMeasurement` 一行渲染成
+SwiftUI 折线图。零侵入 Core；不引此 product 的用户无任何依赖增加。
+
+### Added
+
+- **新 product `SwiftHTFCharts`**（macOS 13+ / iOS 16+，依赖 Apple `Charts`）：
+  - `SeriesChart(trace:)` —— 自动按 dimension 数推断 layout（1D 单线 /
+    2D 多线分色 / 0D 用 index 当 X），从 `value.unit` / `dimensions[0].unit`
+    推断轴 label；按 `trace.outcome` 染色
+  - chainable modifier：`.specRange(_:)` 画上下限虚线带、`.xAxisLabel(_:) /
+    .yAxisLabel(_:)` 覆写自动 label、`.showLegend(_:)`
+  - `SeriesChartLayout` 公开静态工具（`points(from:)` / `axisLabel(for:)`），
+    可在不引入 SwiftUI / Charts 的测试中复用
+  - `LiveSeriesChartViewModel` —— 订阅 `TestSession.events()`，按
+    `(phaseName, traceName)` 复合 key 滚动覆盖 `@Published var activeTraces`，
+    供 SwiftUI body 直接 ForEach
+- **`Examples/SwiftHTFSwiftUIDemo`** —— `PhaseRow` 的 trace 行改 `DisclosureGroup`，
+  展开后内嵌 `SeriesChart`；现有的 `VRampSweep` phase 自动可视化
+- **`Sources/SwiftHTFCharts/SwiftHTFCharts.docc/`** 独立 DocC catalog
+  （landing + Topics 分组）；本地生成：
+  `swift package generate-documentation --target SwiftHTFCharts`
+- **`Tests/SwiftHTFChartsTests/`** —— 13 个新测试：
+  - `SeriesChartLayoutTests`：0D / 1D / 2D 投影、非数值跳过、axis label
+  - `LiveSeriesChartViewModelTests`：滚动覆盖语义、跨 phase 累加、clear / 事件路由
+
 DocC 文档：加 `swift-docc-plugin` 依赖 + `SwiftHTF.docc` catalog
 （landing page + Topics 分组 + Getting Started + Writing Phases 文章）+ 补
 10+ 个核心 public API 的标准 `- Parameters / Returns / Throws` 块。

@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "SwiftHTF", targets: ["SwiftHTF"]),
         .library(name: "SwiftHTFUI", targets: ["SwiftHTFUI"]),
+        .library(name: "SwiftHTFCharts", targets: ["SwiftHTFCharts"]),
         .executable(name: "SwiftHTFDemo", targets: ["SwiftHTFDemo"]),
         .executable(name: "SwiftHTFSwiftUIDemo", targets: ["SwiftHTFSwiftUIDemo"]),
     ],
@@ -32,6 +33,13 @@ let package = Package(
                 .enableExperimentalFeature("StrictConcurrency"),
             ]
         ),
+        .target(
+            name: "SwiftHTFCharts",
+            dependencies: ["SwiftHTF"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency"),
+            ]
+        ),
         .executableTarget(
             name: "SwiftHTFDemo",
             dependencies: ["SwiftHTF"],
@@ -39,7 +47,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "SwiftHTFSwiftUIDemo",
-            dependencies: ["SwiftHTF", "SwiftHTFUI"],
+            dependencies: ["SwiftHTF", "SwiftHTFUI", "SwiftHTFCharts"],
             path: "Examples/SwiftHTFSwiftUIDemo"
         ),
         .testTarget(
@@ -49,6 +57,10 @@ let package = Package(
         .testTarget(
             name: "SwiftHTFUITests",
             dependencies: ["SwiftHTFUI"]
+        ),
+        .testTarget(
+            name: "SwiftHTFChartsTests",
+            dependencies: ["SwiftHTFCharts"]
         ),
     ]
 )
